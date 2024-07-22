@@ -25,7 +25,7 @@ RUN echo "Building OpenSSL" && \
 
 RUN echo "Building zlib" && \
     cd /tmp && \
-    curl -fLO "https://zlib.net/zlib-$ZLIB_VERSION.tar.gz" && \
+    curl -fLO "https://zlib.net/fossils/zlib-$ZLIB_VERSION.tar.gz" && \
     tar xzf "zlib-$ZLIB_VERSION.tar.gz" && cd "zlib-$ZLIB_VERSION" && \
     CC=$MUSL_PREFIX-gcc ./configure --static --prefix=/usr/local/$MUSL_PREFIX-target && \
     make && make install && \
