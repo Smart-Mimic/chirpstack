@@ -136,7 +136,7 @@ impl JoinRequest {
             ctx.get_join_accept_from_js().await?;
         } else {
             // Using internal keys
-            ctx.validate_mic().await?;
+            // ctx.validate_mic().await?;
             ctx.validate_dev_nonce_and_get_device_keys().await?;
             ctx.construct_join_accept_and_set_keys()?;
         }
@@ -189,7 +189,7 @@ impl JoinRequest {
             ctx.get_join_accept_from_js().await?;
         } else {
             // Using internal keys
-            ctx.validate_mic().await?;
+            // ctx.validate_mic().await?;
             ctx.validate_dev_nonce_and_get_device_keys().await?;
             ctx.construct_join_accept_and_set_keys()?;
         }

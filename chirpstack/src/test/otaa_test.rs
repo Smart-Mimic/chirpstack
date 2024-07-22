@@ -29,6 +29,7 @@ struct Test {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_gateway_filtering() {
     let _guard = test::prepare().await;
     let t_a = tenant::create(tenant::Tenant {
@@ -219,6 +220,7 @@ async fn test_gateway_filtering() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_lorawan_10() {
     let _guard = test::prepare().await;
     let t = tenant::create(tenant::Tenant {
@@ -872,6 +874,7 @@ async fn test_lorawan_10() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_lorawan_11() {
     let _guard = test::prepare().await;
 

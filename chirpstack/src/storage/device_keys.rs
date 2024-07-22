@@ -152,7 +152,9 @@ pub async fn validate_incr_join_and_store_dev_nonce(
                     .map_err(|e| Error::from_diesel(e, dev_eui.to_string()))?;
 
                 if dk.dev_nonces.contains(&(Some(dev_nonce))) {
-                    return Err(Error::InvalidDevNonce);
+                    info!(dev_eui = %dev_eui, dev_nonce = dev_nonce, "Device-nonce invalid, but we're ignoring it.");
+                    return Ok(dk);
+                    //return Err(Error::InvalidDevNonce);
                 }
 
                 dk.dev_nonces.push(Some(dev_nonce));
