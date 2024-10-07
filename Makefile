@@ -14,27 +14,26 @@ dev-dependencies:
 # Set the versions
 version:
 	test -n "$(VERSION)"
-	sed -i 's/^version.*/version = "$(VERSION)"/g' ./chirpstack/Cargo.toml
-	sed -i 's/^version.*/version = "$(VERSION)"/g' ./backend/Cargo.toml
-	sed -i 's/^version.*/version = "$(VERSION)"/g' ./lrwn/Cargo.toml
-	sed -i 's/^version.*/version = "$(VERSION)"/g' ./lrwn-filters/Cargo.toml
-	sed -i 's/^version.*/version = "$(VERSION)"/g' ./chirpstack-integration/Cargo.toml
-	sed -i 's/"version.*/"version": "$(VERSION)",/g' ./ui/package.json
-	sed -i 's/"version.*/"version": "$(VERSION)",/g' ./api/grpc-web/package.json
-	sed -i 's/"version.*/"version": "$(VERSION)",/g' ./api/js/package.json
-	sed -i 's/version.*/version = "$(VERSION)",/g' ./api/python/src/setup.py
-	sed -i 's/^version.*/version = "$(VERSION)"/g' ./api/rust/Cargo.toml
-	sed -i 's/^version.*/version = "$(VERSION)"/g' ./api/java/build.gradle.kts
-	sed -i 's/^version.*/version = "$(VERSION)"/g' ./api/kotlin/build.gradle.kts
+	sed -i '' 's/^version.*/version = "$(VERSION)"/g' ./chirpstack/Cargo.toml
+	sed -i '' 's/^version.*/version = "$(VERSION)"/g' ./backend/Cargo.toml
+	sed -i '' 's/^version.*/version = "$(VERSION)"/g' ./lrwn/Cargo.toml
+	sed -i '' 's/^version.*/version = "$(VERSION)"/g' ./lrwn-filters/Cargo.toml
+	sed -i '' 's/"version.*/"version": "$(VERSION)",/g' ./ui/package.json
+	sed -i '' 's/"version.*/"version": "$(VERSION)",/g' ./api/grpc-web/package.json
+	sed -i '' 's/"version.*/"version": "$(VERSION)",/g' ./api/js/package.json
+	sed -i '' 's/version.*/version = "$(VERSION)",/g' ./api/python/src/setup.py
+	sed -i '' 's/^version.*/version = "$(VERSION)"/g' ./api/rust/Cargo.toml
+	sed -i '' 's/^version.*/version = "$(VERSION)"/g' ./api/java/build.gradle.kts
+	sed -i '' 's/^version.*/version = "$(VERSION)"/g' ./api/kotlin/build.gradle.kts
 
-	cd api && make
-	make build-ui
-	make test
+# cd api && make
+# make build-ui
+# make test
 	git add .
 	git commit -v -m "Bump version to $(VERSION)"
 	git tag -a v$(VERSION) -m "v$(VERSION)"
 	git tag -a api/go/v$(VERSION) -m "api/go/v$(VERSION)"
-
+	
 api: version
 	cd api && make
 

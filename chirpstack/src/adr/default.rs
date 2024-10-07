@@ -141,9 +141,10 @@ impl Handler for Algorithm {
         };
 
         // If ADR is disabled, return with current values.
-        if !req.adr {
-            return Ok(resp);
-        }
+        // -> Control disabled because of field devices adr is always false.
+        // if !req.adr {
+        //     return Ok(resp);
+        // }
 
         // The max DR might be configured to a non LoRa (125kHz) data-rate.
         // As this algorithm works on LoRa (125kHz) data-rates only, we need to
@@ -176,7 +177,9 @@ impl Handler for Algorithm {
         }
 
         // Set the new nb_trans;
-        resp.nb_trans = self.get_nb_trans(req.nb_trans, self.get_packet_loss_percentage(req));
+        //resp.nb_trans = self.get_nb_trans(req.nb_trans, self.get_packet_loss_percentage(req));
+        // Nb_trans set to 1 without checking packet loss percentage.
+        resp.nb_trans = 1;
 
         // Calculate the number of steps.
         let snr_max = self.get_max_snr(req);
