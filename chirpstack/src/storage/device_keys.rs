@@ -5,6 +5,8 @@ use diesel_async::RunQueryDsl;
 use tracing::info;
 
 use lrwn::{AES128Key, EUI64};
+use rand::Rng;
+use rand::rngs::OsRng;
 
 use super::error::Error;
 use super::get_async_db_conn;
@@ -127,7 +129,9 @@ pub async fn validate_incr_join_and_store_dev_nonce(
                 }
 
                 dk.dev_nonces.push(Some(dev_nonce));
-                dk.join_nonce += 1;
+                // dk.join_nonce += 1;
+                let random_join_nonce = OsRng.gen_range(0..=(1 << 24) - 1);
+                dk.join_nonce = random_join_nonce;
 
                 diesel::update(device_keys::dsl::device_keys.find(&dev_eui))
                     .set((
