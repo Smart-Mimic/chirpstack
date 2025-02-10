@@ -10,6 +10,29 @@ use lrwn::region::DataRateModulation;
 use crate::config;
 use crate::region;
 
+use prometheus_client::encoding::EncodeLabelSet;
+use prometheus_client::metrics::counter::Counter;
+use prometheus_client::metrics::family::Family;
+
+use crate::monitoring::prometheus;
+
+lazy_static! {
+    static ref SELECT_DOWNLINK_GATEWAY_COUNTER: Family<SelectDownlinkGatewayLabels, Counter> = {
+        let counter = Family::<SelectDownlinkGatewayLabels, Counter>::default();
+        prometheus::register(
+            "select_downlink_gateway_count",
+            "Number of times the select_downlink_gateway function was called with selection type",
+            counter.clone(),
+        );
+        counter
+    };
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+struct SelectDownlinkGatewayLabels {
+    selection_type: String,
+}
+
 // Returns the gateway to use for downlink.
 // It will filter out private gateways (gateways from a different tenant ID,
 // that do not allow downlinks). The result will be sorted based on SNR / RSSI.
@@ -70,6 +93,15 @@ pub fn select_downlink_gateway(
             }
         }
     }
+
+    let labels = SelectDownlinkGatewayLabels {
+        selection_type: if !new_items.is_empty() {
+            "snr_qualified".into()
+        } else {
+            "first_available".into()
+        },
+    };
+    SELECT_DOWNLINK_GATEWAY_COUNTER.get_or_create(&labels).inc();
 
     // Return a random item from the new_items slice (filtered by min_snr_margin).
     // If new_items is empty, then choose will return None and we return the first item from
