@@ -6,10 +6,7 @@ use chrono::{DateTime, Duration, Local, Utc};
 use tracing::{debug, error, info, span, trace, warn, Instrument, Level};
 
 use super::error::Error;
-use super::{
-    data_fns, filter_rx_info_by_region_config_id, filter_rx_info_by_tenant_id, helpers,
-    RelayContext, UplinkFrameSet,
-};
+use super::{data_fns, filter_rx_info_by_tenant_id, helpers, RelayContext, UplinkFrameSet};
 use crate::api::helpers::ToProto;
 use crate::backend::roaming;
 use crate::helpers::errors::PrintFullError;
@@ -124,7 +121,6 @@ impl Data {
             // In case of roaming we do not know the gateways and therefore it must not be
             // filtered.
             ctx.filter_rx_info_by_tenant().await?;
-            ctx.filter_rx_info_by_region_config_id()?;
         }
         ctx.set_device_info()?;
         ctx.set_device_gateway_rx_info()?;
@@ -238,6 +234,7 @@ impl Data {
         };
 
         match device::get_for_phypayload_and_incr_f_cnt_up(
+            &self.uplink_frame_set.region_config_id,
             false,
             &mut self.phy_payload,
             self.uplink_frame_set.dr,
@@ -305,8 +302,14 @@ impl Data {
             dr,
         )? as u8;
 
-        match device::get_for_phypayload_and_incr_f_cnt_up(true, &mut self.phy_payload, dr, ch)
-            .await
+        match device::get_for_phypayload_and_incr_f_cnt_up(
+            &self.uplink_frame_set.region_config_id,
+            true,
+            &mut self.phy_payload,
+            dr,
+            ch,
+        )
+        .await
         {
             Ok(v) => match v {
                 device::ValidationStatus::Ok(f_cnt, d) => {
@@ -491,7 +494,7 @@ impl Data {
                 .cloned()
                 .collect(),
             };
-            integration::log_event(app.id, &dev.variables, &pl).await;
+            integration::log_event(app.id.into(), &dev.variables, &pl).await;
         }
 
         if self.reset {
@@ -509,7 +512,7 @@ impl Data {
                 .cloned()
                 .collect(),
             };
-            integration::log_event(app.id, &dev.variables, &pl).await;
+            integration::log_event(app.id.into(), &dev.variables, &pl).await;
         }
 
         Err(Error::Abort)
@@ -549,7 +552,7 @@ impl Data {
         trace!("Filtering rx_info by tenant_id");
 
         match filter_rx_info_by_tenant_id(
-            self.application.as_ref().unwrap().tenant_id,
+            self.application.as_ref().unwrap().tenant_id.into(),
             &mut self.uplink_frame_set,
         ) {
             Ok(_) => Ok(()),
@@ -570,17 +573,6 @@ impl Data {
                 Err(v)
             }
         }
-    }
-
-    fn filter_rx_info_by_region_config_id(&mut self) -> Result<()> {
-        trace!("Filtering rx_info by region_config_id");
-
-        let dp = self.device_profile.as_ref().unwrap();
-        if let Some(v) = &dp.region_config_id {
-            filter_rx_info_by_region_config_id(v, &mut self.uplink_frame_set)?;
-        }
-
-        Ok(())
     }
 
     fn decrypt_f_opts_mac_commands(&mut self) -> Result<()> {
@@ -958,6 +950,7 @@ impl Data {
             } else {
                 None
             },
+            region_config_id: self.uplink_frame_set.region_config_id.clone(),
         };
 
         if !self._is_end_to_end_encrypted() {
@@ -974,7 +967,7 @@ impl Data {
                 Ok(v) => v,
                 Err(e) => {
                     integration::log_event(
-                        app.id,
+                        app.id.into(),
                         &dev.variables,
                         &integration_pb::LogEvent {
                             time: Some(Utc::now().into()),
@@ -997,7 +990,7 @@ impl Data {
             };
         }
 
-        integration::uplink_event(app.id, &dev.variables, &pl).await;
+        integration::uplink_event(app.id.into(), &dev.variables, &pl).await;
 
         self.uplink_event = Some(pl);
 
@@ -1029,11 +1022,9 @@ impl Data {
                 match v {
                     pbjson_types::value::Kind::NumberValue(v) => {
                         let record = metrics::Record {
-                            time: DateTime::<Utc>::try_from(
-                                up_event.time.as_ref().unwrap().clone(),
-                            )
-                            .map_err(anyhow::Error::msg)?
-                            .with_timezone(&Local),
+                            time: DateTime::<Utc>::try_from(*up_event.time.as_ref().unwrap())
+                                .map_err(anyhow::Error::msg)?
+                                .with_timezone(&Local),
                             kind: match dp_m.kind {
                                 fields::MeasurementKind::COUNTER => metrics::Kind::COUNTER,
                                 fields::MeasurementKind::ABSOLUTE => metrics::Kind::ABSOLUTE,
@@ -1045,7 +1036,12 @@ impl Data {
                             metrics: [("value".to_string(), v)].iter().cloned().collect(),
                         };
 
-                        metrics::save(&format!("device:{}:{}", dev.dev_eui, k), &record).await?;
+                        metrics::save(
+                            &format!("device:{}:{}", dev.dev_eui, k),
+                            &record,
+                            &metrics::Aggregation::default_aggregations(),
+                        )
+                        .await?;
                     }
                     pbjson_types::value::Kind::StringValue(v) => {
                         metrics::save_state(
@@ -1077,7 +1073,7 @@ impl Data {
 
         if update_dp_measurements {
             self.device_profile =
-                Some(device_profile::set_measurements(dp.id, &measurements).await?);
+                Some(device_profile::set_measurements(dp.id.into(), &measurements).await?);
         }
 
         Ok(())
@@ -1101,7 +1097,8 @@ impl Data {
         trace!("Setting region_config_id to device-session");
         let d = self.device.as_mut().unwrap();
         let ds = d.get_device_session_mut()?;
-        ds.region_config_id = self.uplink_frame_set.region_config_id.clone();
+        ds.region_config_id
+            .clone_from(&self.uplink_frame_set.region_config_id);
         Ok(())
     }
 
@@ -1149,7 +1146,7 @@ impl Data {
         tags.extend((*dev.tags).clone());
 
         integration::ack_event(
-            app.id,
+            app.id.into(),
             &dev.variables,
             &integration_pb::AckEvent {
                 deduplication_id: self.uplink_frame_set.uplink_set_id.to_string(),
@@ -1215,7 +1212,12 @@ impl Data {
 
         let dev = self.device.as_ref().unwrap();
 
-        metrics::save(&format!("device:{}", dev.dev_eui), &record).await?;
+        metrics::save(
+            &format!("device:{}", dev.dev_eui),
+            &record,
+            &metrics::Aggregation::default_aggregations(),
+        )
+        .await?;
 
         Ok(())
     }
@@ -1246,7 +1248,12 @@ impl Data {
 
         let dev = self.device.as_ref().unwrap();
 
-        metrics::save(&format!("device:{}", dev.dev_eui), &record).await?;
+        metrics::save(
+            &format!("device:{}", dev.dev_eui),
+            &record,
+            &metrics::Aggregation::default_aggregations(),
+        )
+        .await?;
 
         Ok(())
     }
@@ -1254,8 +1261,23 @@ impl Data {
     async fn start_downlink_data_flow(&mut self) -> Result<()> {
         trace!("Starting downlink data flow");
 
-        let conf = config::get();
-        tokio::time::sleep(conf.network.get_downlink_data_delay).await;
+        // We sleep get_downlink_data_delay to give the end-user application some time
+        // to enqueue data before the downlink flow starts. In case the user has increased
+        // the RX1 Delay relative to the system RX1 Delay, then we add the additional
+        // seconds to this wait.
+        {
+            let conf = config::get();
+            let ds = self.device.as_ref().unwrap().get_device_session()?;
+            let network_conf = config::get_region_network(&ds.region_config_id)?;
+
+            let dev_rx1_delay = ds.rx1_delay as u8;
+            let sys_rx1_delay = network_conf.rx1_delay;
+
+            let rx1_delay_increase = dev_rx1_delay.checked_sub(sys_rx1_delay).unwrap_or_default();
+            let rx1_delay_increase = std::time::Duration::from_secs(rx1_delay_increase.into());
+
+            tokio::time::sleep(conf.network.get_downlink_data_delay + rx1_delay_increase).await;
+        }
 
         if let lrwn::Payload::MACPayload(pl) = &self.phy_payload.payload {
             downlink::data::Data::handle_response(
@@ -1278,8 +1300,26 @@ impl Data {
     async fn start_downlink_data_flow_relayed(&mut self) -> Result<()> {
         trace!("Starting relayed downlink data flow");
 
-        let conf = config::get();
-        tokio::time::sleep(conf.network.get_downlink_data_delay).await;
+        // We sleep get_downlink_data_delay to give the end-user application some time
+        // to enqueue data before the downlink flow starts. In case the user has increased
+        // the RX1 Delay relative to the system RX1 Delay, then we add the additional
+        // seconds to this wait.
+        // Note: In this case we use the RX1 Delay from the Relay device-session.
+        {
+            let conf = config::get();
+            let relay_ctx = self.relay_context.as_ref().unwrap();
+            let ds = relay_ctx.device.get_device_session()?;
+
+            let network_conf = config::get_region_network(&ds.region_config_id)?;
+
+            let dev_rx1_delay = ds.rx1_delay as u8;
+            let sys_rx1_delay = network_conf.rx1_delay;
+
+            let rx1_delay_increase = dev_rx1_delay.checked_sub(sys_rx1_delay).unwrap_or_default();
+            let rx1_delay_increase = std::time::Duration::from_secs(rx1_delay_increase.into());
+
+            tokio::time::sleep(conf.network.get_downlink_data_delay + rx1_delay_increase).await;
+        }
 
         if let lrwn::Payload::MACPayload(pl) = &self.phy_payload.payload {
             downlink::data::Data::handle_response_relayed(

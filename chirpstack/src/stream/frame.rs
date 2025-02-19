@@ -30,7 +30,7 @@ pub async fn log_uplink_for_gateways(ufl: &stream::UplinkFrameLog) -> Result<()>
             m_type: ufl.m_type,
             dev_addr: ufl.dev_addr.clone(),
             dev_eui: ufl.dev_eui.clone(),
-            time: ufl.time.clone(),
+            time: ufl.time,
             plaintext_f_opts: ufl.plaintext_f_opts,
             plaintext_frm_payload: ufl.plaintext_frm_payload,
         };
@@ -41,7 +41,7 @@ pub async fn log_uplink_for_gateways(ufl: &stream::UplinkFrameLog) -> Result<()>
         if conf.monitoring.per_gateway_frame_log_max_history > 0 {
             let key = redis_key(format!("gw:{{{}}}:stream:frame", gateway_id));
 
-            redis::pipe()
+            () = redis::pipe()
                 .atomic()
                 .cmd("XADD")
                 .arg(&key)
@@ -62,7 +62,7 @@ pub async fn log_uplink_for_gateways(ufl: &stream::UplinkFrameLog) -> Result<()>
         // global gateway stream
         if conf.monitoring.gateway_frame_log_max_history > 0 {
             let key = redis_key("gw:stream:frame".to_string());
-            redis::cmd("XADD")
+            () = redis::cmd("XADD")
                 .arg(&key)
                 .arg("MAXLEN")
                 .arg(conf.monitoring.gateway_frame_log_max_history)
@@ -89,7 +89,7 @@ pub async fn log_downlink_for_gateway(dfl: &stream::DownlinkFrameLog) -> Result<
     // per gateway stream
     if conf.monitoring.per_gateway_frame_log_max_history > 0 {
         let key = redis_key(format!("gw:{{{}}}:stream:frame", dfl.gateway_id));
-        redis::pipe()
+        () = redis::pipe()
             .atomic()
             .cmd("XADD")
             .arg(&key)
@@ -110,7 +110,7 @@ pub async fn log_downlink_for_gateway(dfl: &stream::DownlinkFrameLog) -> Result<
     // global gateway stream
     if conf.monitoring.gateway_frame_log_max_history > 0 {
         let key = redis_key("gw:stream:frame".to_string());
-        redis::cmd("XADD")
+        () = redis::cmd("XADD")
             .arg(&key)
             .arg("MAXLEN")
             .arg(conf.monitoring.gateway_frame_log_max_history)
@@ -137,7 +137,7 @@ pub async fn log_uplink_for_device(ufl: &stream::UplinkFrameLog) -> Result<()> {
     if conf.monitoring.per_device_frame_log_max_history > 0 {
         let key = redis_key(format!("device:{{{}}}:stream:frame", ufl.dev_eui));
 
-        redis::pipe()
+        () = redis::pipe()
             .atomic()
             .cmd("XADD")
             .arg(&key)
@@ -158,7 +158,7 @@ pub async fn log_uplink_for_device(ufl: &stream::UplinkFrameLog) -> Result<()> {
     // global device stream
     if conf.monitoring.device_frame_log_max_history > 0 {
         let key = redis_key("device:stream:frame".to_string());
-        redis::cmd("XADD")
+        () = redis::cmd("XADD")
             .arg(&key)
             .arg("MAXLEN")
             .arg(conf.monitoring.device_frame_log_max_history)
@@ -185,7 +185,7 @@ pub async fn log_downlink_for_device(dfl: &stream::DownlinkFrameLog) -> Result<(
     if conf.monitoring.per_device_frame_log_max_history > 0 {
         let key = redis_key(format!("device:{{{}}}:stream:frame", dfl.dev_eui));
 
-        redis::pipe()
+        () = redis::pipe()
             .atomic()
             .cmd("XADD")
             .arg(&key)
@@ -206,7 +206,7 @@ pub async fn log_downlink_for_device(dfl: &stream::DownlinkFrameLog) -> Result<(
     // global device stream
     if conf.monitoring.device_frame_log_max_history > 0 {
         let key = redis_key("device:stream:frame".to_string());
-        redis::cmd("XADD")
+        () = redis::cmd("XADD")
             .arg(&key)
             .arg("MAXLEN")
             .arg(conf.monitoring.device_frame_log_max_history)
@@ -245,7 +245,7 @@ pub async fn get_frame_logs(
 
         for stream_key in &srr.keys {
             for stream_id in &stream_key.ids {
-                last_id = stream_id.id.clone();
+                last_id.clone_from(&stream_id.id);
                 for (k, v) in &stream_id.map {
                     let res = handle_stream(&last_id, &channel, k, v).await;
 
@@ -279,7 +279,7 @@ async fn handle_stream(
     match k {
         "up" => {
             trace!(key = %k, id = %stream_id, "Frame-log received from stream");
-            if let redis::Value::Data(b) = v {
+            if let redis::Value::BulkString(b) = v {
                 let pl = stream::UplinkFrameLog::decode(&mut Cursor::new(b))?;
                 let mut phy = lrwn::PhyPayload::from_slice(&pl.phy_payload)?;
                 if pl.plaintext_f_opts {
@@ -320,7 +320,7 @@ async fn handle_stream(
         }
         "down" => {
             trace!(key = %k, id = %stream_id, "frame-log received from stream");
-            if let redis::Value::Data(b) = v {
+            if let redis::Value::BulkString(b) = v {
                 let pl = stream::DownlinkFrameLog::decode(&mut Cursor::new(b))?;
                 let mut phy = lrwn::PhyPayload::from_slice(&pl.phy_payload)?;
                 if pl.plaintext_f_opts {

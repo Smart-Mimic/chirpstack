@@ -3,16 +3,19 @@ import { Link, useNavigate } from "react-router-dom";
 import { Space, Breadcrumb, Card } from "antd";
 import { PageHeader } from "@ant-design/pro-layout";
 
-import { User, CreateUserRequest, CreateUserResponse } from "@chirpstack/chirpstack-api-grpc-web/api/user_pb";
+import type { CreateUserResponse } from "@chirpstack/chirpstack-api-grpc-web/api/user_pb";
+import { User, CreateUserRequest } from "@chirpstack/chirpstack-api-grpc-web/api/user_pb";
 
 import UserForm from "./UserForm";
 import UserStore from "../../stores/UserStore";
+import { useTitle } from "../helpers";
 
 function CreateUser() {
+  useTitle("Network Server", "Users", "Add");
   const navigate = useNavigate();
 
   const onFinish = (obj: User, password: string) => {
-    let req = new CreateUserRequest();
+    const req = new CreateUserRequest();
     req.setUser(obj);
     req.setPassword(password);
 
@@ -29,7 +32,7 @@ function CreateUser() {
         breadcrumbRender={() => (
           <Breadcrumb>
             <Breadcrumb.Item>
-              <span>Network-server</span>
+              <span>Network Server</span>
             </Breadcrumb.Item>
             <Breadcrumb.Item>
               <span>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useParams } from "react-router-dom";
 
@@ -7,17 +7,20 @@ import { PageHeader } from "@ant-design/pro-layout";
 import ReactMarkdown from "react-markdown";
 
 import { Region } from "@chirpstack/chirpstack-api-grpc-web/common/common_pb";
-import { GetRegionRequest, GetRegionResponse } from "@chirpstack/chirpstack-api-grpc-web/api/internal_pb";
+import type { GetRegionResponse } from "@chirpstack/chirpstack-api-grpc-web/api/internal_pb";
+import { GetRegionRequest } from "@chirpstack/chirpstack-api-grpc-web/api/internal_pb";
 
 import { getEnumName } from "../helpers";
 import InternalStore from "../../stores/InternalStore";
+import { useTitle } from "../helpers";
 
 function RegionDetails() {
   const [region, setRegion] = useState<GetRegionResponse | undefined>(undefined);
   const { id } = useParams();
+  useTitle("Network Server", "Regions", region?.getDescription());
 
   useEffect(() => {
-    let req = new GetRegionRequest();
+    const req = new GetRegionRequest();
     req.setId(id!);
 
     InternalStore.getRegion(req, (resp: GetRegionResponse) => {

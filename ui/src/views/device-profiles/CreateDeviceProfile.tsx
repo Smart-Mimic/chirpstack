@@ -4,16 +4,14 @@ import { Space, Breadcrumb, Card } from "antd";
 import { PageHeader } from "@ant-design/pro-layout";
 
 import { MacVersion, RegParamsRevision } from "@chirpstack/chirpstack-api-grpc-web/common/common_pb";
-import {
-  DeviceProfile,
-  CreateDeviceProfileRequest,
-  CreateDeviceProfileResponse,
-} from "@chirpstack/chirpstack-api-grpc-web/api/device_profile_pb";
+import type { CreateDeviceProfileResponse } from "@chirpstack/chirpstack-api-grpc-web/api/device_profile_pb";
+import { DeviceProfile, CreateDeviceProfileRequest } from "@chirpstack/chirpstack-api-grpc-web/api/device_profile_pb";
 
-import { Tenant } from "@chirpstack/chirpstack-api-grpc-web/api/tenant_pb";
+import type { Tenant } from "@chirpstack/chirpstack-api-grpc-web/api/tenant_pb";
 
 import DeviceProfileForm from "./DeviceProfileForm";
 import DeviceProfileStore from "../../stores/DeviceProfileStore";
+import { useTitle } from "../helpers";
 
 interface IProps {
   tenant: Tenant;
@@ -21,11 +19,12 @@ interface IProps {
 
 function CreateDeviceProfile(props: IProps) {
   const navigate = useNavigate();
+  useTitle("Tenants", props.tenant.getName(), "Device profiles", "Add");
 
   const onFinish = (obj: DeviceProfile) => {
     obj.setTenantId(props.tenant.getId());
 
-    let req = new CreateDeviceProfileRequest();
+    const req = new CreateDeviceProfileRequest();
     req.setDeviceProfile(obj);
 
     DeviceProfileStore.create(req, (_resp: CreateDeviceProfileResponse) => {
@@ -33,39 +32,41 @@ function CreateDeviceProfile(props: IProps) {
     });
   };
 
-  const codecScript = `// Decode uplink function.
-  //
-  // Input is an object with the following fields:
-  // - bytes = Byte array containing the uplink payload, e.g. [255, 230, 255, 0]
-  // - fPort = Uplink fPort.
-  // - variables = Object containing the configured device variables.
-  //
-  // Output must be an object with the following fields:
-  // - data = Object representing the decoded payload.
-  function decodeUplink(input) {
-    return {
-      data: {
-        temp: 22.5
-      }
-    };
-  }
-  
-  // Encode downlink function.
-  //
-  // Input is an object with the following fields:
-  // - data = Object representing the payload that must be encoded.
-  // - variables = Object containing the configured device variables.
-  //
-  // Output must be an object with the following fields:
-  // - bytes = Byte array containing the downlink payload.
-  function encodeDownlink(input) {
-    return {
-      bytes: [225, 230, 255, 0]
-    };
-  }
-  `;
+  const codecScript = `/**
+ * Decode uplink function
+ * 
+ * @param {object} input
+ * @param {number[]} input.bytes Byte array containing the uplink payload, e.g. [255, 230, 255, 0]
+ * @param {number} input.fPort Uplink fPort.
+ * @param {Record<string, string>} input.variables Object containing the configured device variables.
+ * 
+ * @returns {{data: object}} Object representing the decoded payload.
+ */
+function decodeUplink(input) {
+  return {
+    data: {
+      // temp: 22.5
+    }
+  };
+}
 
-  let deviceProfile = new DeviceProfile();
+/**
+ * Encode downlink function.
+ * 
+ * @param {object} input
+ * @param {object} input.data Object representing the payload that must be encoded.
+ * @param {Record<string, string>} input.variables Object containing the configured device variables.
+ * 
+ * @returns {{bytes: number[]}} Byte array containing the downlink payload.
+ */
+function encodeDownlink(input) {
+  return {
+    // bytes: [225, 230, 255, 0]
+  };
+}
+`;
+
+  const deviceProfile = new DeviceProfile();
   deviceProfile.setPayloadCodecScript(codecScript);
   deviceProfile.setSupportsOtaa(true);
   deviceProfile.setUplinkInterval(3600);

@@ -17,7 +17,7 @@ function MyDevicesIntegrationForm(props: IProps) {
 
   const onFinish = (values: MyDevicesIntegration.AsObject) => {
     const v = Object.assign(props.initialValues.toObject(), values);
-    let i = new MyDevicesIntegration();
+    const i = new MyDevicesIntegration();
 
     i.setApplicationId(v.applicationId);
     if (v.endpoint === "custom") {
@@ -38,7 +38,12 @@ function MyDevicesIntegrationForm(props: IProps) {
   };
 
   return (
-    <Form layout="vertical" initialValues={props.initialValues.toObject()} onFinish={onFinish} onFinishFailed={onFinishFailed}>
+    <Form
+      layout="vertical"
+      initialValues={props.initialValues.toObject()}
+      onFinish={onFinish}
+      onFinishFailed={onFinishFailed}
+    >
       <Form.Item
         label="Select myDevices endpoint"
         name="endpoint"

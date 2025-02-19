@@ -14,7 +14,7 @@ pub async fn log_request(pl: &stream::ApiRequestLog) -> Result<()> {
 
     let key = redis_key("api:stream:request".to_string());
     let b = pl.encode_to_vec();
-    redis::cmd("XADD")
+    () = redis::cmd("XADD")
         .arg(&key)
         .arg("MAXLEN")
         .arg(conf.monitoring.api_request_log_max_history)
@@ -51,7 +51,7 @@ mod tests {
         let key = redis_key("api:stream:request".to_string());
         let srr: StreamReadReply = redis::cmd("XREAD")
             .arg("COUNT")
-            .arg(1 as usize)
+            .arg(1_usize)
             .arg("STREAMS")
             .arg(&key)
             .arg("0")
@@ -62,7 +62,7 @@ mod tests {
         assert_eq!(1, srr.keys.len());
         assert_eq!(1, srr.keys[0].ids.len());
 
-        if let Some(redis::Value::Data(b)) = srr.keys[0].ids[0].map.get("request") {
+        if let Some(redis::Value::BulkString(b)) = srr.keys[0].ids[0].map.get("request") {
             let pl_recv = stream::ApiRequestLog::decode(&mut Cursor::new(b)).unwrap();
             assert_eq!(pl, pl_recv);
         } else {

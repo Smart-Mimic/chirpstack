@@ -355,7 +355,7 @@ impl Configuration {
                                     .collect(),
                                 ),
                                 (
-                                    Revision::Latest, // RP002-1.0.2, RP002-1.0.3
+                                    Revision::Latest, // RP002-1.0.2, RP002-1.0.3, RP002-1.0.4
                                     [
                                         (0, MaxPayloadSize { m: 19, n: 11 }),
                                         (1, MaxPayloadSize { m: 61, n: 53 }),
@@ -560,7 +560,7 @@ impl Configuration {
                                     .collect(),
                                 ),
                                 (
-                                    Revision::Latest, // RP002-1.0.2, RP002-1.0.3
+                                    Revision::Latest, // RP002-1.0.2, RP002-1.0.3, RP002-1.0.4
                                     [
                                         (0, MaxPayloadSize { m: 19, n: 11 }),
                                         (1, MaxPayloadSize { m: 61, n: 53 }),
@@ -907,8 +907,7 @@ pub mod test {
     use crate::*;
 
     fn config_full() -> Configuration {
-        let c = Configuration::new(false);
-        c
+        Configuration::new(false)
     }
 
     fn config_chan_8_15() -> Configuration {
@@ -1030,7 +1029,7 @@ pub mod test {
     #[test]
     fn test_cf_list() {
         let c = config_chan_8_15();
-        assert_eq!(true, c.get_cf_list(MacVersion::LORAWAN_1_0_2).is_none());
+        assert!(c.get_cf_list(MacVersion::LORAWAN_1_0_2).is_none());
 
         let lw_11_cf_list = c.get_cf_list(MacVersion::LORAWAN_1_1_0).unwrap();
         assert_eq!(

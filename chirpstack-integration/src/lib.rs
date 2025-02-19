@@ -95,7 +95,9 @@ enum RedisClient {
 impl RedisClient {
     async fn get_async_connection(&self) -> Result<RedisConnection> {
         match self {
-            RedisClient::Client(c) => Ok(RedisConnection::Client(c.get_async_connection().await?)),
+            RedisClient::Client(c) => Ok(RedisConnection::Client(
+                c.get_multiplexed_async_connection().await?,
+            )),
             RedisClient::ClusterClient(c) => Ok(RedisConnection::ClusterClient(
                 c.get_async_connection().await?,
             )),
@@ -104,7 +106,7 @@ impl RedisClient {
 }
 
 enum RedisConnection {
-    Client(redis::aio::Connection),
+    Client(redis::aio::MultiplexedConnection),
     ClusterClient(redis::cluster_async::ClusterConnection),
 }
 
@@ -213,7 +215,7 @@ impl Integration {
                             info!(key = %k, "Event received from Redis stream");
                             match k.as_ref() {
                                 "up" => {
-                                    if let redis::Value::Data(b) = v {
+                                    if let redis::Value::BulkString(b) = v {
                                         let pl = integration_pb::UplinkEvent::decode(
                                             &mut Cursor::new(b),
                                         )?;
@@ -221,21 +223,21 @@ impl Integration {
                                     }
                                 }
                                 "join" => {
-                                    if let redis::Value::Data(b) = v {
+                                    if let redis::Value::BulkString(b) = v {
                                         let pl =
                                             integration_pb::JoinEvent::decode(&mut Cursor::new(b))?;
                                         tokio::spawn(join_event(pl));
                                     }
                                 }
                                 "ack" => {
-                                    if let redis::Value::Data(b) = v {
+                                    if let redis::Value::BulkString(b) = v {
                                         let pl =
                                             integration_pb::AckEvent::decode(&mut Cursor::new(b))?;
                                         tokio::spawn(ack_event(pl));
                                     }
                                 }
                                 "txack" => {
-                                    if let redis::Value::Data(b) = v {
+                                    if let redis::Value::BulkString(b) = v {
                                         let pl = integration_pb::TxAckEvent::decode(
                                             &mut Cursor::new(b),
                                         )?;
@@ -243,7 +245,7 @@ impl Integration {
                                     }
                                 }
                                 "status" => {
-                                    if let redis::Value::Data(b) = v {
+                                    if let redis::Value::BulkString(b) = v {
                                         let pl = integration_pb::StatusEvent::decode(
                                             &mut Cursor::new(b),
                                         )?;
@@ -251,14 +253,14 @@ impl Integration {
                                     }
                                 }
                                 "log" => {
-                                    if let redis::Value::Data(b) = v {
+                                    if let redis::Value::BulkString(b) = v {
                                         let pl =
                                             integration_pb::LogEvent::decode(&mut Cursor::new(b))?;
                                         tokio::spawn(log_event(pl));
                                     }
                                 }
                                 "location" => {
-                                    if let redis::Value::Data(b) = v {
+                                    if let redis::Value::BulkString(b) = v {
                                         let pl = integration_pb::LocationEvent::decode(
                                             &mut Cursor::new(b),
                                         )?;
@@ -266,7 +268,7 @@ impl Integration {
                                     }
                                 }
                                 "integration" => {
-                                    if let redis::Value::Data(b) = v {
+                                    if let redis::Value::BulkString(b) = v {
                                         let pl = integration_pb::IntegrationEvent::decode(
                                             &mut Cursor::new(b),
                                         )?;
@@ -465,7 +467,10 @@ mod test {
         sleep(Duration::from_millis(100)).await;
 
         let redis_client = redis::Client::open(redis_url).unwrap();
-        let mut redis_conn = redis_client.get_async_connection().await.unwrap();
+        let mut redis_conn = redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .unwrap();
 
         println!("Uplink");
 

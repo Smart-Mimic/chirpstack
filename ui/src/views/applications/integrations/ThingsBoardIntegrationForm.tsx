@@ -12,7 +12,7 @@ interface IProps {
 function ThingsBoardIntegrationForm(props: IProps) {
   const onFinish = (values: ThingsBoardIntegration.AsObject) => {
     const v = Object.assign(props.initialValues.toObject(), values);
-    let i = new ThingsBoardIntegration();
+    const i = new ThingsBoardIntegration();
 
     i.setApplicationId(v.applicationId);
     i.setServer(v.server);
@@ -21,7 +21,12 @@ function ThingsBoardIntegrationForm(props: IProps) {
   };
 
   return (
-    <Form layout="vertical" initialValues={props.initialValues.toObject()} onFinish={onFinish} onFinishFailed={onFinishFailed}>
+    <Form
+      layout="vertical"
+      initialValues={props.initialValues.toObject()}
+      onFinish={onFinish}
+      onFinishFailed={onFinishFailed}
+    >
       <Form.Item
         label="ThingsBoard server"
         name="server"

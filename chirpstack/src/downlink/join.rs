@@ -182,7 +182,7 @@ impl JoinAccept<'_> {
         trace!("Select downlink gateway");
 
         let gw_down = helpers::select_downlink_gateway(
-            Some(self.tenant.id),
+            Some(self.tenant.id.into()),
             &self.uplink_frame_set.region_config_id,
             self.network_conf.gateway_prefer_min_margin,
             self.device_gateway_rx_info.as_mut().unwrap(),
@@ -452,7 +452,7 @@ impl JoinAccept<'_> {
 
         let phy_b = self.join_accept.to_vec()?;
         for i in &mut self.downlink_frame.items {
-            i.phy_payload = phy_b.clone();
+            i.phy_payload.clone_from(&phy_b);
         }
 
         Ok(())
@@ -507,7 +507,7 @@ impl JoinAccept<'_> {
 
         let relay_phy_b = relay_phy.to_vec()?;
         for i in &mut self.downlink_frame.items {
-            i.phy_payload = relay_phy_b.clone();
+            i.phy_payload.clone_from(&relay_phy_b);
         }
 
         Ok(())

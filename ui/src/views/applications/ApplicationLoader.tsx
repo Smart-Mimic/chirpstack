@@ -1,12 +1,9 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Route, Routes, useParams } from "react-router-dom";
 
-import { Tenant } from "@chirpstack/chirpstack-api-grpc-web/api/tenant_pb";
-import {
-  Application,
-  GetApplicationRequest,
-  GetApplicationResponse,
-} from "@chirpstack/chirpstack-api-grpc-web/api/application_pb";
+import type { Tenant } from "@chirpstack/chirpstack-api-grpc-web/api/tenant_pb";
+import type { Application, GetApplicationResponse } from "@chirpstack/chirpstack-api-grpc-web/api/application_pb";
+import { GetApplicationRequest } from "@chirpstack/chirpstack-api-grpc-web/api/application_pb";
 
 import ApplicationStore from "../../stores/ApplicationStore";
 import ApplicationLayout from "./ApplicationLayout";
@@ -26,6 +23,16 @@ function ApplicationLoader(props: IProps) {
   const [measurementKeys, setMeasurementKeys] = useState<string[]>([]);
 
   useEffect(() => {
+    const loadApplication = () => {
+      const req = new GetApplicationRequest();
+      req.setId(applicationId!);
+
+      ApplicationStore.get(req, (resp: GetApplicationResponse) => {
+        setApplication(resp.getApplication());
+        setMeasurementKeys(resp.getMeasurementKeysList());
+      });
+    };
+
     ApplicationStore.on("change", loadApplication);
     loadApplication();
 
@@ -33,16 +40,6 @@ function ApplicationLoader(props: IProps) {
       ApplicationStore.removeAllListeners("change");
     };
   }, [applicationId]);
-
-  const loadApplication = () => {
-    let req = new GetApplicationRequest();
-    req.setId(applicationId!);
-
-    ApplicationStore.get(req, (resp: GetApplicationResponse) => {
-      setApplication(resp.getApplication());
-      setMeasurementKeys(resp.getMeasurementKeysList());
-    });
-  };
 
   const app = application;
   if (!app) {

@@ -9,8 +9,8 @@ use rand::Rng;
 use rand::rngs::OsRng;
 
 use super::error::Error;
-use super::get_async_db_conn;
 use super::schema::device_keys;
+use super::{db_transaction, fields, get_async_db_conn};
 
 #[derive(Queryable, Insertable, AsChangeset, PartialEq, Eq, Debug, Clone)]
 #[diesel(table_name = device_keys)]
@@ -20,7 +20,7 @@ pub struct DeviceKeys {
     pub updated_at: DateTime<Utc>,
     pub nwk_key: AES128Key,
     pub app_key: AES128Key,
-    pub dev_nonces: Vec<Option<i32>>,
+    pub dev_nonces: fields::DevNonces,
     pub join_nonce: i32,
 }
 
@@ -40,7 +40,7 @@ impl Default for DeviceKeys {
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00,
             ]),
-            dev_nonces: Vec::new(),
+            dev_nonces: fields::DevNonces::default(),
             join_nonce: 0,
         }
     }
@@ -95,7 +95,10 @@ pub async fn delete(dev_eui: &EUI64) -> Result<(), Error> {
     Ok(())
 }
 
-pub async fn set_dev_nonces(dev_eui: &EUI64, nonces: &[i32]) -> Result<DeviceKeys, Error> {
+pub async fn set_dev_nonces(
+    dev_eui: EUI64,
+    nonces: &fields::DevNonces,
+) -> Result<DeviceKeys, Error> {
     let dk: DeviceKeys = diesel::update(device_keys::dsl::device_keys.find(dev_eui))
         .set(device_keys::dev_nonces.eq(nonces))
         .get_result(&mut get_async_db_conn().await?)
@@ -109,8 +112,9 @@ pub async fn set_dev_nonces(dev_eui: &EUI64, nonces: &[i32]) -> Result<DeviceKey
 }
 
 pub async fn validate_incr_join_and_store_dev_nonce(
-    dev_eui: &EUI64,
-    dev_nonce: i32,
+    join_eui: EUI64,
+    dev_eui: EUI64,
+    dev_nonce: u16,
 ) -> Result<DeviceKeys, Error> {
     let mut c = get_async_db_conn().await?;
     let dk: DeviceKeys = c
@@ -144,7 +148,8 @@ pub async fn validate_incr_join_and_store_dev_nonce(
                     .map_err(|e| Error::from_diesel(e, dev_eui.to_string()))
             })
         })
-        .await?;
+    })
+    .await?;
 
     info!(dev_eui = %dev_eui, dev_nonce = dev_nonce, "Device-nonce validated, join-nonce incremented and stored");
     Ok(dk)
@@ -159,7 +164,7 @@ pub mod test {
     pub async fn reset_nonces(dev_eui: &EUI64) -> Result<DeviceKeys, Error> {
         let dk: DeviceKeys = diesel::update(device_keys::dsl::device_keys.find(&dev_eui))
             .set((
-                device_keys::dev_nonces.eq::<Vec<i32>>(Vec::new()),
+                device_keys::dev_nonces.eq(fields::DevNonces::default()),
                 device_keys::join_nonce.eq(0),
             ))
             .get_result(&mut get_async_db_conn().await?)
@@ -193,7 +198,7 @@ pub mod test {
         };
 
         let dk = DeviceKeys {
-            dev_eui: dev_eui,
+            dev_eui,
             ..Default::default()
         };
 
@@ -217,6 +222,6 @@ pub mod test {
 
         // delete
         delete(&dk.dev_eui).await.unwrap();
-        assert_eq!(true, delete(&dk.dev_eui).await.is_err());
+        assert!(delete(&dk.dev_eui).await.is_err());
     }
 }

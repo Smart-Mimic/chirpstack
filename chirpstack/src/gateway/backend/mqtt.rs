@@ -23,7 +23,7 @@ use tracing::{error, info, trace};
 
 use super::GatewayBackend;
 use crate::config::GatewayBackendMqtt;
-use crate::helpers::tls::{get_root_certs, load_cert, load_key};
+use crate::helpers::tls22::{get_root_certs, load_cert, load_key};
 use crate::monitoring::prometheus;
 use crate::{downlink, uplink};
 use lrwn::region::CommonName;
@@ -143,14 +143,15 @@ impl<'a> MqttBackend<'a> {
 
             let client_conf = if conf.tls_cert.is_empty() && conf.tls_key.is_empty() {
                 rustls::ClientConfig::builder()
-                    .with_safe_defaults()
                     .with_root_certificates(root_certs.clone())
                     .with_no_client_auth()
             } else {
                 rustls::ClientConfig::builder()
-                    .with_safe_defaults()
                     .with_root_certificates(root_certs.clone())
-                    .with_client_auth_cert(load_cert(&conf.tls_cert)?, load_key(&conf.tls_key)?)?
+                    .with_client_auth_cert(
+                        load_cert(&conf.tls_cert).await?,
+                        load_key(&conf.tls_key).await?,
+                    )?
             };
 
             mqtt_opts.set_transport(Transport::tls_with_config(client_conf.into()));
@@ -184,10 +185,16 @@ impl<'a> MqttBackend<'a> {
             } else {
                 conf.event_topic.clone()
             };
-            let event_topic = format!("$share/{}/{}", conf.share_name, event_topic);
+            let share_name = conf.share_name.clone();
 
             async move {
-                while connect_rx.recv().await.is_some() {
+                while let Some(shared_sub_support) = connect_rx.recv().await {
+                    let event_topic = if shared_sub_support {
+                        format!("$share/{}/{}", share_name, event_topic)
+                    } else {
+                        event_topic.clone()
+                    };
+
                     info!(region_id = %region_config_id, event_topic = %event_topic, "Subscribing to gateway event topic");
                     if let Err(e) = client.subscribe(&event_topic, qos).await {
                         error!(region_id = %region_config_id, event_topic = %event_topic, error = %e, "MQTT subscribe error");
@@ -221,7 +228,18 @@ impl<'a> MqttBackend<'a> {
                                 }
                                 Event::Incoming(Incoming::ConnAck(v)) => {
                                     if v.code == ConnectReturnCode::Success {
-                                        if let Err(e) = connect_tx.try_send(()) {
+                                        // Per specification:
+                                        // A value of 1 means Shared Subscriptions are supported. If not present, then Shared Subscriptions are supported.
+                                        let shared_sub_support = v
+                                            .properties
+                                            .map(|v| {
+                                                v.shared_subscription_available
+                                                    .map(|v| v == 1)
+                                                    .unwrap_or(true)
+                                            })
+                                            .unwrap_or(true);
+
+                                        if let Err(e) = connect_tx.try_send(shared_sub_support) {
                                             error!(error = %e, "Send to subscribe channel error");
                                         }
                                     } else {
@@ -345,16 +363,13 @@ async fn message_callback(
             if let Some(rx_info) = &mut event.rx_info {
                 set_gateway_json(&rx_info.gateway_id, json);
                 rx_info.ns_time = Some(Utc::now().into());
-                rx_info
-                    .metadata
-                    .insert("region_config_id".to_string(), region_config_id.to_string());
-                rx_info.metadata.insert(
-                    "region_common_name".to_string(),
-                    region_common_name.to_string(),
-                );
             }
 
-            tokio::spawn(uplink::deduplicate_uplink(event));
+            tokio::spawn(uplink::deduplicate_uplink(
+                region_common_name,
+                region_config_id.to_string(),
+                event,
+            ));
         } else if topic.ends_with("/stats") {
             EVENT_COUNTER
                 .get_or_create(&EventLabels {
@@ -396,6 +411,18 @@ async fn message_callback(
 
             set_gateway_json(&event.gateway_id, json);
             tokio::spawn(downlink::tx_ack::TxAck::handle(event));
+        } else if topic.ends_with("/mesh-heartbeat") {
+            EVENT_COUNTER
+                .get_or_create(&EventLabels {
+                    event: "mesh-heartbeat".to_string(),
+                })
+                .inc();
+            let event = match json {
+                true => serde_json::from_slice(&p.payload)?,
+                false => chirpstack_api::gw::MeshHeartbeat::decode(&mut Cursor::new(&p.payload))?,
+            };
+
+            tokio::spawn(uplink::mesh::MeshHeartbeat::handle(event));
         } else {
             return Err(anyhow!("Unknown event type"));
         }

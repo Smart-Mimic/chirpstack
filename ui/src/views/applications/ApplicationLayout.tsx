@@ -3,8 +3,9 @@ import { Route, Routes, Link, useNavigate, useLocation } from "react-router-dom"
 import { Space, Breadcrumb, Card, Button, Menu } from "antd";
 import { PageHeader } from "@ant-design/pro-layout";
 
-import { Tenant } from "@chirpstack/chirpstack-api-grpc-web/api/tenant_pb";
-import { Application, DeleteApplicationRequest } from "@chirpstack/chirpstack-api-grpc-web/api/application_pb";
+import type { Tenant } from "@chirpstack/chirpstack-api-grpc-web/api/tenant_pb";
+import type { Application } from "@chirpstack/chirpstack-api-grpc-web/api/application_pb";
+import { DeleteApplicationRequest } from "@chirpstack/chirpstack-api-grpc-web/api/application_pb";
 
 import ApplicationStore from "../../stores/ApplicationStore";
 import SessionStore from "../../stores/SessionStore";
@@ -37,6 +38,7 @@ import EditThingsBoardIntegration from "./integrations/EditThingsBoardIntegratio
 import GenerateMqttCertificate from "./integrations/GenerateMqttCertificate";
 import CreateIftttIntegration from "./integrations/CreateIftttIntegration";
 import EditIftttIntegration from "./integrations/EditIftttIntegration";
+import { useTitle } from "../helpers";
 
 interface IProps {
   tenant: Tenant;
@@ -47,9 +49,10 @@ interface IProps {
 function ApplicationLayout(props: IProps) {
   const navigate = useNavigate();
   const location = useLocation();
+  useTitle("Tenants", props.tenant.getName(), "Applications", props.application.getName());
 
   const deleteApplication = () => {
-    let req = new DeleteApplicationRequest();
+    const req = new DeleteApplicationRequest();
     req.setId(props.application.getId());
 
     ApplicationStore.delete(req, () => {

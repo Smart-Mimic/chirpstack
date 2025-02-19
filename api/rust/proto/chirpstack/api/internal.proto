@@ -7,6 +7,8 @@ option java_package = "io.chirpstack.api";
 option java_multiple_files = true;
 option java_outer_classname = "InternalProto";
 option csharp_namespace = "Chirpstack.Api";
+option php_namespace = "Chirpstack\\Api";
+option php_metadata_namespace = "GPBMetadata\\Chirpstack\\Api";
 
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/empty.proto";
@@ -66,6 +68,9 @@ service InternalService {
 
   // GetRegion returns the region details for the given region.
   rpc GetRegion(GetRegionRequest) returns (GetRegionResponse) {}
+
+  // GetVersion returns the ChirpStack version.
+  rpc GetVersion(google.protobuf.Empty) returns (GetVersionResponse) {}
 }
 
 message ApiKey {
@@ -218,6 +223,12 @@ message SettingsResponse {
 
   // OAuth2 settings.
   OAuth2 oauth2 = 2;
+
+  // Tileserver URL.
+  string tileserver_url = 3;
+
+  // Map attribution.
+  string map_attribution = 4;
 }
 
 message OpenIdConnect {
@@ -413,4 +424,9 @@ message RegionChannel {
 
   // Max DR.
   uint32 dr_max = 3;
+}
+
+message GetVersionResponse {
+  // version
+  string version = 1;
 }
