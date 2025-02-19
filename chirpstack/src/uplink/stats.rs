@@ -2,14 +2,15 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Local, Utc};
 use tracing::{error, info, span, trace, warn, Instrument, Level};
 
 use crate::gateway::backend as gateway_backend;
 use crate::helpers::errors::PrintFullError;
-use crate::storage::{error::Error, gateway, metrics};
+use crate::storage::{error::Error, fields, gateway, metrics};
 use crate::{config, region};
 use chirpstack_api::{common, gw};
 use lrwn::EUI64;
@@ -63,6 +64,7 @@ impl Stats {
 
         ctx.update_gateway_state().await?;
         ctx.save_stats().await?;
+        ctx.save_duty_cycle_stats().await?;
         ctx.update_gateway_configuration().await?;
 
         Ok(())
@@ -71,25 +73,26 @@ impl Stats {
     async fn update_gateway_state(&mut self) -> Result<()> {
         trace!("Update gateway state");
 
+        let mut gw_cs = gateway::GatewayChangeset {
+            last_seen_at: Some(Some(Utc::now())),
+            properties: Some(fields::KeyValue::new(self.stats.metadata.clone())),
+            ..Default::default()
+        };
+
         if let Some(loc) = &self.stats.location {
-            self.gateway = Some(
-                gateway::update_state_and_loc(
-                    &self.gateway_id,
-                    loc.latitude,
-                    loc.longitude,
-                    loc.altitude as f32,
-                    &self.stats.metadata,
-                )
-                .await
-                .context("Update gateway state and location")?,
-            );
-        } else {
-            self.gateway = Some(
-                gateway::update_state(&self.gateway_id, &self.stats.metadata)
-                    .await
-                    .context("Update gateway state")?,
-            );
+            // Sanity check to make sure there is a location.
+            if !(loc.latitude == 0.0 && loc.longitude == 0.0 && loc.altitude == 0.0) {
+                gw_cs.latitude = Some(loc.latitude);
+                gw_cs.longitude = Some(loc.longitude);
+                gw_cs.altitude = Some(loc.altitude as f32);
+            }
         }
+
+        self.gateway = Some(
+            gateway::partial_update(self.gateway_id, &gw_cs)
+                .await
+                .context("Update gateway state")?,
+        );
 
         Ok(())
     }
@@ -99,9 +102,7 @@ impl Stats {
 
         let mut m = metrics::Record {
             time: match &self.stats.time {
-                Some(v) => DateTime::try_from(v.clone())
-                    .map_err(anyhow::Error::msg)?
-                    .into(),
+                Some(v) => DateTime::try_from(*v).map_err(anyhow::Error::msg)?.into(),
                 None => Local::now(),
             },
             kind: metrics::Kind::ABSOLUTE,
@@ -155,9 +156,72 @@ impl Stats {
         metrics::save(
             &format!("gw:{}", self.gateway.as_ref().unwrap().gateway_id),
             &m,
+            &metrics::Aggregation::default_aggregations(),
         )
         .await
         .context("Save gateway stats")?;
+
+        Ok(())
+    }
+
+    async fn save_duty_cycle_stats(&self) -> Result<()> {
+        trace!("Saving duty-cycle stats");
+
+        let duty_cycle_stats = match self.stats.duty_cycle_stats.as_ref() {
+            Some(v) => v,
+            None => {
+                // No stats, nothing to do.
+                return Ok(());
+            }
+        };
+
+        let window: Duration = duty_cycle_stats
+            .window
+            .map(|v| v.try_into().unwrap_or_default())
+            .unwrap_or_default();
+
+        let mut m = metrics::Record {
+            time: match &self.stats.time {
+                Some(v) => DateTime::try_from(*v).map_err(anyhow::Error::msg)?.into(),
+                None => Local::now(),
+            },
+            kind: metrics::Kind::COUNTER,
+            metrics: HashMap::new(),
+        };
+
+        for b in &duty_cycle_stats.bands {
+            let load_max: Duration = b
+                .load_max
+                .map(|d| d.try_into().unwrap_or_default())
+                .unwrap_or_default();
+            let load_tracked: Duration = b
+                .load_tracked
+                .map(|d| d.try_into().unwrap_or_default())
+                .unwrap_or_default();
+
+            let permille = load_max.as_nanos() / (window.as_nanos() / 1000);
+            let key = format!(
+                "{}_{}_{}_{}",
+                b.name, b.frequency_min, b.frequency_max, permille
+            );
+            let dc_max_load_perc_key = format!("max_load_perc_{}", key);
+            let dc_window_perc_key = format!("window_perc_{}", key);
+
+            let dc_max_load_perc =
+                load_tracked.as_nanos() as f64 / load_max.as_nanos() as f64 * 100.0;
+            let dc_window_perc = load_tracked.as_nanos() as f64 / window.as_nanos() as f64 * 100.0;
+
+            m.metrics.insert(dc_max_load_perc_key, dc_max_load_perc);
+            m.metrics.insert(dc_window_perc_key, dc_window_perc);
+        }
+
+        metrics::save(
+            &format!("gw:dc:{}", self.gateway.as_ref().unwrap().gateway_id),
+            &m,
+            &[metrics::Aggregation::MINUTE],
+        )
+        .await
+        .context("Save gateway duty-cycle stats")?;
 
         Ok(())
     }

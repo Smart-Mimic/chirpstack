@@ -1,7 +1,7 @@
 import { notification } from "antd";
 import { EventEmitter } from "events";
 import { GatewayServiceClient } from "@chirpstack/chirpstack-api-grpc-web/api/gateway_grpc_web_pb";
-import {
+import type {
   CreateGatewayRequest,
   GetGatewayRequest,
   GetGatewayResponse,
@@ -11,8 +11,16 @@ import {
   ListGatewaysResponse,
   GetGatewayMetricsRequest,
   GetGatewayMetricsResponse,
+  GetGatewayDutyCycleMetricsRequest,
+  GetGatewayDutyCycleMetricsResponse,
   GenerateGatewayClientCertificateRequest,
   GenerateGatewayClientCertificateResponse,
+  GetRelayGatewayRequest,
+  GetRelayGatewayResponse,
+  ListRelayGatewaysRequest,
+  ListRelayGatewaysResponse,
+  UpdateRelayGatewayRequest,
+  DeleteRelayGatewayRequest,
 } from "@chirpstack/chirpstack-api-grpc-web/api/gateway_pb";
 
 import SessionStore from "./SessionStore";
@@ -107,6 +115,20 @@ class GatewayStore extends EventEmitter {
     });
   };
 
+  getDutyCycleMetrics = (
+    req: GetGatewayDutyCycleMetricsRequest,
+    callbackFunc: (resp: GetGatewayDutyCycleMetricsResponse) => void,
+  ) => {
+    this.client.getDutyCycleMetrics(req, SessionStore.getMetadata(), (err, resp) => {
+      if (err !== null) {
+        HandleError(err);
+        return;
+      }
+
+      callbackFunc(resp);
+    });
+  };
+
   generateClientCertificate = (
     req: GenerateGatewayClientCertificateRequest,
     callbackFunc: (resp: GenerateGatewayClientCertificateResponse) => void,
@@ -118,6 +140,60 @@ class GatewayStore extends EventEmitter {
       }
 
       callbackFunc(resp);
+    });
+  };
+
+  getRelayGateway = (req: GetRelayGatewayRequest, callbackFunc: (resp: GetRelayGatewayResponse) => void) => {
+    this.client.getRelayGateway(req, SessionStore.getMetadata(), (err, resp) => {
+      if (err !== null) {
+        HandleError(err);
+        return;
+      }
+
+      callbackFunc(resp);
+    });
+  };
+
+  listRelayGateways = (req: ListRelayGatewaysRequest, callbackFunc: (resp: ListRelayGatewaysResponse) => void) => {
+    this.client.listRelayGateways(req, SessionStore.getMetadata(), (err, resp) => {
+      if (err !== null) {
+        HandleError(err);
+        return;
+      }
+
+      callbackFunc(resp);
+    });
+  };
+
+  updateRelayGateway = (req: UpdateRelayGatewayRequest, callbackFunc: () => void) => {
+    this.client.updateRelayGateway(req, SessionStore.getMetadata(), err => {
+      if (err !== null) {
+        HandleError(err);
+        return;
+      }
+
+      notification.success({
+        message: "Relay Gateway updated",
+        duration: 3,
+      });
+
+      callbackFunc();
+    });
+  };
+
+  deleteRelayGateway = (req: DeleteRelayGatewayRequest, callbackFunc: () => void) => {
+    this.client.deleteRelayGateway(req, SessionStore.getMetadata(), err => {
+      if (err !== null) {
+        HandleError(err);
+        return;
+      }
+
+      notification.success({
+        message: "Relay Gateway deleted",
+        duration: 3,
+      });
+
+      callbackFunc();
     });
   };
 }

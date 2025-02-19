@@ -43,7 +43,7 @@ pub async fn get_geoloc_buffer(
                     None => {
                         return false;
                     }
-                    Some(v) => match v.clone().try_into() {
+                    Some(v) => match (*v).try_into() {
                         Ok(v) => v,
                         Err(_) => {
                             return false;
@@ -86,7 +86,7 @@ pub async fn save_geoloc_buffer(
     };
     let b = buffer.encode_to_vec();
 
-    redis::cmd("PSETEX")
+    () = redis::cmd("PSETEX")
         .arg(key)
         .arg(ttl.num_milliseconds())
         .arg(b)

@@ -1,13 +1,17 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 
-import moment from "moment";
+import { format, sub } from "date-fns";
 import { Descriptions, Space, Card, Row, Col } from "antd";
 import { Timestamp } from "google-protobuf/google/protobuf/timestamp_pb";
 
-import {
+import type {
   Gateway,
-  GetGatewayMetricsRequest,
   GetGatewayMetricsResponse,
+  GetGatewayDutyCycleMetricsResponse,
+} from "@chirpstack/chirpstack-api-grpc-web/api/gateway_pb";
+import {
+  GetGatewayMetricsRequest,
+  GetGatewayDutyCycleMetricsRequest,
 } from "@chirpstack/chirpstack-api-grpc-web/api/gateway_pb";
 import { Aggregation } from "@chirpstack/chirpstack-api-grpc-web/common/common_pb";
 
@@ -23,29 +27,32 @@ interface IProps {
 }
 
 function GatewayDashboard(props: IProps) {
-  const [metricsAggregation, setMetricsAggregation] = useState<Aggregation>(Aggregation.DAY);
+  const [metricsAggregation] = useState<Aggregation>(Aggregation.DAY);
   const [gatewayMetrics, setGatewayMetrics] = useState<GetGatewayMetricsResponse | undefined>(undefined);
+  const [gatewayDutyCycleMetrics, setGatewayDutyCycleMetrics] = useState<
+    GetGatewayDutyCycleMetricsResponse | undefined
+  >(undefined);
 
   useEffect(() => {
     const agg = metricsAggregation;
-    const end = moment();
-    let start = moment();
+    const end = new Date();
+    let start = new Date();
 
     if (agg === Aggregation.DAY) {
-      start = start.subtract(30, "days");
+      start = sub(start, { days: 30 });
     } else if (agg === Aggregation.HOUR) {
-      start = start.subtract(24, "hours");
+      start = sub(start, { hours: 24 });
     } else if (agg === Aggregation.MONTH) {
-      start = start.subtract(12, "months");
+      start = sub(start, { months: 12 });
     }
 
-    let startPb = new Timestamp();
-    let endPb = new Timestamp();
+    const startPb = new Timestamp();
+    const endPb = new Timestamp();
 
-    startPb.fromDate(start.toDate());
-    endPb.fromDate(end.toDate());
+    startPb.fromDate(start);
+    endPb.fromDate(end);
 
-    let req = new GetGatewayMetricsRequest();
+    const req = new GetGatewayMetricsRequest();
     req.setGatewayId(props.gateway.getGatewayId());
     req.setStart(startPb);
     req.setEnd(endPb);
@@ -54,18 +61,35 @@ function GatewayDashboard(props: IProps) {
     GatewayStore.getMetrics(req, (resp: GetGatewayMetricsResponse) => {
       setGatewayMetrics(resp);
     });
+
+    const dcEnd = sub(new Date(), { minutes: 1 });
+    const dcEndPb = new Timestamp();
+    dcEndPb.fromDate(dcEnd);
+
+    const dcStart = sub(dcEnd, { hours: 1 });
+    const dcStartPb = new Timestamp();
+    dcStartPb.fromDate(dcStart);
+
+    const dcReq = new GetGatewayDutyCycleMetricsRequest();
+    dcReq.setGatewayId(props.gateway.getGatewayId());
+    dcReq.setStart(dcStartPb);
+    dcReq.setEnd(dcEndPb);
+
+    GatewayStore.getDutyCycleMetrics(dcReq, (resp: GetGatewayDutyCycleMetricsResponse) => {
+      setGatewayDutyCycleMetrics(resp);
+    });
   }, [props, metricsAggregation]);
 
   const loc = props.gateway.getLocation()!;
   const location: [number, number] = [loc.getLatitude(), loc.getLongitude()];
 
-  if (gatewayMetrics === undefined) {
+  if (gatewayMetrics === undefined || gatewayDutyCycleMetrics === undefined) {
     return null;
   }
 
   let lastSeenAt: string = "Never";
   if (props.lastSeenAt !== undefined) {
-    lastSeenAt = moment(props.lastSeenAt).format("YYYY-MM-DD HH:mm:ss");
+    lastSeenAt = format(props.lastSeenAt, "yyyy-MM-dd HH:mm:ss");
   }
 
   return (
@@ -89,6 +113,17 @@ function GatewayDashboard(props: IProps) {
           </Map>
         </Col>
       </Row>
+      {gatewayDutyCycleMetrics.getMaxLoadPercentage()!.getDatasetsList().length !== 0 &&
+        gatewayDutyCycleMetrics.getWindowPercentage()!.getDatasetsList().length !== 0 && (
+          <Row gutter={24}>
+            <Col span={12}>
+              <MetricChart metric={gatewayDutyCycleMetrics.getWindowPercentage()!} aggregation={Aggregation.MINUTE} />
+            </Col>
+            <Col span={12}>
+              <MetricChart metric={gatewayDutyCycleMetrics.getMaxLoadPercentage()!} aggregation={Aggregation.MINUTE} />
+            </Col>
+          </Row>
+        )}
       <Row gutter={24}>
         <Col span={8}>
           <MetricChart metric={gatewayMetrics.getRxPackets()!} aggregation={metricsAggregation} />

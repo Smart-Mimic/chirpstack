@@ -1,20 +1,23 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 
-import moment from "moment";
+import { format, sub } from "date-fns";
 import { ReloadOutlined } from "@ant-design/icons";
-import { Descriptions, Space, Card, Statistic, Row, Col, Tabs, Radio, RadioChangeEvent, Button, Spin } from "antd";
+import type { RadioChangeEvent } from "antd";
+import { Descriptions, Space, Card, Statistic, Row, Col, Tabs, Radio, Button, Spin } from "antd";
 import { Timestamp } from "google-protobuf/google/protobuf/timestamp_pb";
 
-import {
+import type {
   Device,
-  GetDeviceMetricsRequest,
   GetDeviceMetricsResponse,
-  GetDeviceLinkMetricsRequest,
   GetDeviceLinkMetricsResponse,
 } from "@chirpstack/chirpstack-api-grpc-web/api/device_pb";
+import {
+  GetDeviceMetricsRequest,
+  GetDeviceLinkMetricsRequest,
+} from "@chirpstack/chirpstack-api-grpc-web/api/device_pb";
 import { Aggregation } from "@chirpstack/chirpstack-api-grpc-web/common/common_pb";
-import { DeviceProfile } from "@chirpstack/chirpstack-api-grpc-web/api/device_profile_pb";
+import type { DeviceProfile } from "@chirpstack/chirpstack-api-grpc-web/api/device_profile_pb";
 
 import DeviceStore from "../../stores/DeviceStore";
 import MetricChart from "../../components/MetricChart";
@@ -33,64 +36,70 @@ function DeviceDashboard(props: IProps) {
   const [deviceLinkMetrics, setDeviceLinkMetrics] = useState<GetDeviceLinkMetricsResponse | undefined>(undefined);
   const [deviceLinkMetricsLoaded, setDeviceLinkMetricsLoaded] = useState<boolean>(false);
 
-  useEffect(() => {
-    loadMetrics();
-  }, [props, metricsAggregation]);
+  const loadDeviceMetrics = useCallback(
+    (start: Date, end: Date, agg: Aggregation) => {
+      const startPb = new Timestamp();
+      const endPb = new Timestamp();
 
-  const loadMetrics = () => {
+      startPb.fromDate(start);
+      endPb.fromDate(end);
+
+      const req = new GetDeviceMetricsRequest();
+      req.setDevEui(props.device.getDevEui());
+      req.setStart(startPb);
+      req.setEnd(endPb);
+      req.setAggregation(agg);
+
+      DeviceStore.getMetrics(req, (resp: GetDeviceMetricsResponse) => {
+        setDeviceMetrics(resp);
+      });
+    },
+    [props.device],
+  );
+
+  const loadLinkMetrics = useCallback(
+    (start: Date, end: Date, agg: Aggregation) => {
+      const startPb = new Timestamp();
+      const endPb = new Timestamp();
+
+      startPb.fromDate(start);
+      endPb.fromDate(end);
+
+      const req = new GetDeviceLinkMetricsRequest();
+      req.setDevEui(props.device.getDevEui());
+      req.setStart(startPb);
+      req.setEnd(endPb);
+      req.setAggregation(agg);
+
+      DeviceStore.getLinkMetrics(req, (resp: GetDeviceLinkMetricsResponse) => {
+        setDeviceLinkMetrics(resp);
+        setDeviceLinkMetricsLoaded(true);
+      });
+    },
+    [props.device],
+  );
+
+  const loadMetrics = useCallback(() => {
     const agg = metricsAggregation;
-    const end = moment();
-    let start = moment();
+    const end = new Date();
+    let start = new Date();
 
     if (agg === Aggregation.DAY) {
-      start = start.subtract(30, "days");
+      start = sub(start, { days: 30 });
     } else if (agg === Aggregation.HOUR) {
-      start = start.subtract(24, "hours");
+      start = sub(start, { hours: 24 });
     } else if (agg === Aggregation.MONTH) {
-      start = start.subtract(12, "months");
+      start = sub(start, { months: 12 });
     }
 
     setDeviceLinkMetricsLoaded(false);
-    loadLinkMetrics(start.toDate(), end.toDate(), agg);
-    loadDeviceMetrics(start.toDate(), end.toDate(), agg);
-  };
+    loadLinkMetrics(start, end, agg);
+    loadDeviceMetrics(start, end, agg);
+  }, [loadLinkMetrics, loadDeviceMetrics, metricsAggregation]);
 
-  const loadDeviceMetrics = (start: Date, end: Date, agg: Aggregation) => {
-    let startPb = new Timestamp();
-    let endPb = new Timestamp();
-
-    startPb.fromDate(start);
-    endPb.fromDate(end);
-
-    let req = new GetDeviceMetricsRequest();
-    req.setDevEui(props.device.getDevEui());
-    req.setStart(startPb);
-    req.setEnd(endPb);
-    req.setAggregation(agg);
-
-    DeviceStore.getMetrics(req, (resp: GetDeviceMetricsResponse) => {
-      setDeviceMetrics(resp);
-    });
-  };
-
-  const loadLinkMetrics = (start: Date, end: Date, agg: Aggregation) => {
-    let startPb = new Timestamp();
-    let endPb = new Timestamp();
-
-    startPb.fromDate(start);
-    endPb.fromDate(end);
-
-    let req = new GetDeviceLinkMetricsRequest();
-    req.setDevEui(props.device.getDevEui());
-    req.setStart(startPb);
-    req.setEnd(endPb);
-    req.setAggregation(agg);
-
-    DeviceStore.getLinkMetrics(req, (resp: GetDeviceLinkMetricsResponse) => {
-      setDeviceLinkMetrics(resp);
-      setDeviceLinkMetricsLoaded(true);
-    });
-  };
+  useEffect(() => {
+    loadMetrics();
+  }, [props, metricsAggregation, loadMetrics]);
 
   const onMetricsAggregationChange = (e: RadioChangeEvent) => {
     setMetricsAggregation(e.target.value);
@@ -100,16 +109,16 @@ function DeviceDashboard(props: IProps) {
     return null;
   }
 
-  let dm = [];
+  const dm = [];
 
   {
-    let states = deviceMetrics.getStatesMap();
-    let keys = states.toArray().map(v => v[0]);
+    const states = deviceMetrics.getStatesMap();
+    const keys = states.toArray().map(v => v[0]);
     keys.sort();
 
     for (let i = 0; i < keys.length; i += 3) {
-      let items = keys.slice(i, i + 3).map(k => {
-        let m = states.get(k)!;
+      const items = keys.slice(i, i + 3).map(k => {
+        const m = states.get(k)!;
         return (
           <Col span={8}>
             <Card>
@@ -124,13 +133,13 @@ function DeviceDashboard(props: IProps) {
   }
 
   {
-    let metrics = deviceMetrics.getMetricsMap();
-    let keys = metrics.toArray().map(v => v[0]);
+    const metrics = deviceMetrics.getMetricsMap();
+    const keys = metrics.toArray().map(v => v[0]);
     keys.sort();
 
     for (let i = 0; i < keys.length; i += 3) {
-      let items = keys.slice(i, i + 3).map(k => {
-        let m = metrics.get(k)!;
+      const items = keys.slice(i, i + 3).map(k => {
+        const m = metrics.get(k)!;
         return (
           <Col span={8}>
             <MetricChart metric={m} aggregation={metricsAggregation} zeroToNull />
@@ -144,7 +153,7 @@ function DeviceDashboard(props: IProps) {
 
   let lastSeenAt = "Never";
   if (props.lastSeenAt !== undefined) {
-    lastSeenAt = moment(props.lastSeenAt).format("YYYY-MM-DD HH:mm:ss");
+    lastSeenAt = format(props.lastSeenAt, "yyyy-MM-dd HH:mm:ss");
   }
 
   const loading = !deviceLinkMetricsLoaded || !deviceMetrics;

@@ -1,10 +1,11 @@
 import { Card } from "antd";
 
-import { TimeUnit } from "chart.js";
+import type { TimeUnit } from "chart.js";
 import { Bar } from "react-chartjs-2";
-import moment from "moment";
+import palette from "google-palette";
 
-import { Metric, Aggregation } from "@chirpstack/chirpstack-api-grpc-web/common/common_pb";
+import type { Metric } from "@chirpstack/chirpstack-api-grpc-web/common/common_pb";
+import { Aggregation } from "@chirpstack/chirpstack-api-grpc-web/common/common_pb";
 
 interface IProps {
   metric: Metric;
@@ -19,25 +20,7 @@ function MetricBar(props: IProps) {
     unit = "month";
   }
 
-  let backgroundColors = [
-    "#8bc34a",
-    "#ff5722",
-    "#ff9800",
-    "#ffc107",
-    "#ffeb3b",
-    "#cddc39",
-    "#4caf50",
-    "#009688",
-    "#00bcd4",
-    "#03a9f4",
-    "#2196f3",
-    "#3f51b5",
-    "#673ab7",
-    "#9c27b0",
-    "#e91e63",
-  ];
-
-  const animation: false = false;
+  const animation = false as const;
 
   const options = {
     animation: animation,
@@ -60,7 +43,7 @@ function MetricBar(props: IProps) {
     },
   };
 
-  let data: {
+  const data: {
     labels: number[];
     datasets: {
       label: string;
@@ -68,17 +51,17 @@ function MetricBar(props: IProps) {
       backgroundColor: string;
     }[];
   } = {
-    labels: props.metric.getTimestampsList().map(v => moment(v.toDate()).valueOf()),
+    labels: props.metric.getTimestampsList().map(v => v.toDate().getTime()),
     datasets: [],
   };
 
-  for (let ds of props.metric.getDatasetsList()) {
+  props.metric.getDatasetsList().forEach((ds, i) => {
     data.datasets.push({
       label: ds.getLabel(),
       data: ds.getDataList(),
-      backgroundColor: backgroundColors.shift()!,
+      backgroundColor: palette("cb-Paired", props.metric.getDatasetsList().length).map((hex: string) => "#" + hex)[i],
     });
-  }
+  });
 
   return (
     <Card title={props.metric.getName()} className="dashboard-chart">

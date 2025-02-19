@@ -16,6 +16,7 @@ use crate::storage::{
 };
 use crate::{config, test, uplink};
 use chirpstack_api::{common, gw, internal};
+use lrwn::region::CommonName;
 use lrwn::{AES128Key, NetID, EUI64};
 
 #[tokio::test]
@@ -59,7 +60,7 @@ async fn test_fns_uplink() {
 
     let recv_time = Utc::now();
 
-    let mut rx_info = gw::UplinkRxInfo {
+    let rx_info = gw::UplinkRxInfo {
         gateway_id: gw.gateway_id.to_string(),
         gw_time: Some(recv_time.into()),
         location: Some(common::Location {
@@ -70,12 +71,6 @@ async fn test_fns_uplink() {
         }),
         ..Default::default()
     };
-    rx_info
-        .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
 
     let mut tx_info = gw::UplinkTxInfo {
         frequency: 868100000,
@@ -123,7 +118,7 @@ async fn test_fns_uplink() {
                 ul_meta_data: backend::ULMetaData {
                     ul_freq: Some(868.1),
                     data_rate: Some(0),
-                    recv_time: recv_time,
+                    recv_time,
                     rf_region: "EU868".to_string(),
                     gw_cnt: Some(1),
                     gw_info: roaming::rx_info_to_gw_info(&[rx_info.clone()]).unwrap(),
@@ -150,10 +145,12 @@ async fn test_fns_uplink() {
         .status(200);
     });
 
-    gateway_backend::set_backend(&"eu868", Box::new(gateway_backend::mock::Backend {})).await;
+    gateway_backend::set_backend("eu868", Box::new(gateway_backend::mock::Backend {})).await;
 
     // Simulate uplink
     uplink::handle_uplink(
+        CommonName::EU868,
+        "eu868".into(),
         Uuid::new_v4(),
         gw::UplinkFrameSet {
             phy_payload: data_phy.to_vec().unwrap(),
@@ -182,6 +179,7 @@ async fn test_sns_uplink() {
     // Set roaming agreement.
     conf.roaming.servers.push(config::RoamingServer {
         net_id: NetID::from_str("000202").unwrap(),
+        passive_roaming_validate_mic: true,
         server: fns_mock.url("/"),
         ..Default::default()
     });
@@ -200,7 +198,7 @@ async fn test_sns_uplink() {
 
     let app = application::create(application::Application {
         name: "app".into(),
-        tenant_id: t.id.clone(),
+        tenant_id: t.id,
         ..Default::default()
     })
     .await
@@ -208,7 +206,7 @@ async fn test_sns_uplink() {
 
     let dp = device_profile::create(device_profile::DeviceProfile {
         name: "dp".into(),
-        tenant_id: t.id.clone(),
+        tenant_id: t.id,
         region: lrwn::region::CommonName::EU868,
         mac_version: lrwn::region::MacVersion::LORAWAN_1_0_2,
         reg_params_revision: lrwn::region::Revision::A,
@@ -224,29 +222,32 @@ async fn test_sns_uplink() {
 
     let dev = device::create(device::Device {
         name: "device".into(),
-        application_id: app.id.clone(),
-        device_profile_id: dp.id.clone(),
+        application_id: app.id,
+        device_profile_id: dp.id,
         dev_eui: EUI64::from_be_bytes([2, 2, 3, 4, 5, 6, 7, 8]),
         enabled_class: DeviceClass::B,
         dev_addr: Some(dev_addr),
-        device_session: Some(internal::DeviceSession {
-            mac_version: common::MacVersion::Lorawan104.into(),
-            dev_addr: dev_addr.to_vec(),
-            f_nwk_s_int_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            s_nwk_s_int_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            nwk_s_enc_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            app_s_key: Some(common::KeyEnvelope {
-                kek_label: "".into(),
-                aes_key: vec![16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
-            }),
-            f_cnt_up: 8,
-            n_f_cnt_down: 5,
-            enabled_uplink_channel_indices: vec![0, 1, 2],
-            rx1_delay: 1,
-            rx2_frequency: 869525000,
-            region_config_id: "eu868".into(),
-            ..Default::default()
-        }),
+        device_session: Some(
+            internal::DeviceSession {
+                mac_version: common::MacVersion::Lorawan104.into(),
+                dev_addr: dev_addr.to_vec(),
+                f_nwk_s_int_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+                s_nwk_s_int_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+                nwk_s_enc_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+                app_s_key: Some(common::KeyEnvelope {
+                    kek_label: "".into(),
+                    aes_key: vec![16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
+                }),
+                f_cnt_up: 8,
+                n_f_cnt_down: 5,
+                enabled_uplink_channel_indices: vec![0, 1, 2],
+                rx1_delay: 1,
+                rx2_frequency: 869525000,
+                region_config_id: "eu868".into(),
+                ..Default::default()
+            }
+            .into(),
+        ),
         ..Default::default()
     })
     .await
@@ -323,7 +324,7 @@ async fn test_sns_uplink() {
         ul_meta_data: backend::ULMetaData {
             ul_freq: Some(868.1),
             data_rate: Some(0),
-            recv_time: recv_time,
+            recv_time,
             rf_region: "EU868".to_string(),
             gw_cnt: Some(1),
             gw_info: roaming::rx_info_to_gw_info(&[rx_info.clone()]).unwrap(),
@@ -382,7 +383,9 @@ async fn test_sns_uplink() {
     let resp =
         backend_api::handle_request(Bytes::from(serde_json::to_string(&pr_start_req).unwrap()))
             .await;
-    let resp_b = hyper::body::to_bytes(resp.into_body()).await.unwrap();
+    let resp_b = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
 
     let pr_start_ans: backend::PRStartAnsPayload = serde_json::from_slice(&resp_b).unwrap();
 
@@ -447,7 +450,7 @@ async fn test_sns_roaming_not_allowed() {
 
     let app = application::create(application::Application {
         name: "app".into(),
-        tenant_id: t.id.clone(),
+        tenant_id: t.id,
         ..Default::default()
     })
     .await
@@ -455,7 +458,7 @@ async fn test_sns_roaming_not_allowed() {
 
     let dp = device_profile::create(device_profile::DeviceProfile {
         name: "dp".into(),
-        tenant_id: t.id.clone(),
+        tenant_id: t.id,
         region: lrwn::region::CommonName::EU868,
         mac_version: lrwn::region::MacVersion::LORAWAN_1_0_2,
         reg_params_revision: lrwn::region::Revision::A,
@@ -470,29 +473,32 @@ async fn test_sns_roaming_not_allowed() {
 
     let dev = device::create(device::Device {
         name: "device".into(),
-        application_id: app.id.clone(),
-        device_profile_id: dp.id.clone(),
+        application_id: app.id,
+        device_profile_id: dp.id,
         dev_eui: EUI64::from_be_bytes([2, 2, 3, 4, 5, 6, 7, 8]),
         enabled_class: DeviceClass::B,
         dev_addr: Some(dev_addr),
-        device_session: Some(internal::DeviceSession {
-            mac_version: common::MacVersion::Lorawan104.into(),
-            dev_addr: dev_addr.to_vec(),
-            f_nwk_s_int_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            s_nwk_s_int_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            nwk_s_enc_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            app_s_key: Some(common::KeyEnvelope {
-                kek_label: "".into(),
-                aes_key: vec![16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
-            }),
-            f_cnt_up: 8,
-            n_f_cnt_down: 5,
-            enabled_uplink_channel_indices: vec![0, 1, 2],
-            rx1_delay: 1,
-            rx2_frequency: 869525000,
-            region_config_id: "eu868".into(),
-            ..Default::default()
-        }),
+        device_session: Some(
+            internal::DeviceSession {
+                mac_version: common::MacVersion::Lorawan104.into(),
+                dev_addr: dev_addr.to_vec(),
+                f_nwk_s_int_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+                s_nwk_s_int_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+                nwk_s_enc_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+                app_s_key: Some(common::KeyEnvelope {
+                    kek_label: "".into(),
+                    aes_key: vec![16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
+                }),
+                f_cnt_up: 8,
+                n_f_cnt_down: 5,
+                enabled_uplink_channel_indices: vec![0, 1, 2],
+                rx1_delay: 1,
+                rx2_frequency: 869525000,
+                region_config_id: "eu868".into(),
+                ..Default::default()
+            }
+            .into(),
+        ),
         ..Default::default()
     })
     .await
@@ -560,7 +566,7 @@ async fn test_sns_roaming_not_allowed() {
         ul_meta_data: backend::ULMetaData {
             ul_freq: Some(868.1),
             data_rate: Some(0),
-            recv_time: recv_time,
+            recv_time,
             rf_region: "EU868".to_string(),
             gw_cnt: Some(1),
             gw_info: roaming::rx_info_to_gw_info(&[rx_info.clone()]).unwrap(),
@@ -571,7 +577,9 @@ async fn test_sns_roaming_not_allowed() {
     let resp =
         backend_api::handle_request(Bytes::from(serde_json::to_string(&pr_start_req).unwrap()))
             .await;
-    let resp_b = hyper::body::to_bytes(resp.into_body()).await.unwrap();
+    let resp_b = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let pr_start_ans: backend::PRStartAnsPayload = serde_json::from_slice(&resp_b).unwrap();
 
     assert_eq!(
@@ -671,7 +679,7 @@ async fn test_sns_dev_not_found() {
         ul_meta_data: backend::ULMetaData {
             ul_freq: Some(868.1),
             data_rate: Some(0),
-            recv_time: recv_time,
+            recv_time,
             rf_region: "EU868".to_string(),
             gw_cnt: Some(1),
             gw_info: roaming::rx_info_to_gw_info(&[rx_info.clone()]).unwrap(),
@@ -682,7 +690,9 @@ async fn test_sns_dev_not_found() {
     let resp =
         backend_api::handle_request(Bytes::from(serde_json::to_string(&pr_start_req).unwrap()))
             .await;
-    let resp_b = hyper::body::to_bytes(resp.into_body()).await.unwrap();
+    let resp_b = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
 
     let pr_start_ans: backend::PRStartAnsPayload = serde_json::from_slice(&resp_b).unwrap();
 

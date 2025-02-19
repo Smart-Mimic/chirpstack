@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
-import { Menu, MenuProps } from "antd";
+import type { MenuProps } from "antd";
+import { Menu, Typography } from "antd";
 import {
   CloudOutlined,
   HomeOutlined,
@@ -12,21 +13,25 @@ import {
   ControlOutlined,
   AppstoreOutlined,
   CompassOutlined,
+  RadarChartOutlined,
 } from "@ant-design/icons";
 
-import {
-  GetTenantResponse,
-  ListTenantsRequest,
-  ListTenantsResponse,
-} from "@chirpstack/chirpstack-api-grpc-web/api/tenant_pb";
+import type { GetTenantResponse, ListTenantsResponse } from "@chirpstack/chirpstack-api-grpc-web/api/tenant_pb";
+import { ListTenantsRequest } from "@chirpstack/chirpstack-api-grpc-web/api/tenant_pb";
 
-import Autocomplete, { OptionCallbackFunc, OptionsCallbackFunc } from "../components/Autocomplete";
+import type { GetVersionResponse } from "@chirpstack/chirpstack-api-grpc-web/api/internal_pb";
+
+import type { OptionCallbackFunc, OptionsCallbackFunc } from "../components/Autocomplete";
+import Autocomplete from "../components/Autocomplete";
+import Admin from "../components/Admin";
 import TenantStore from "../stores/TenantStore";
 import SessionStore from "../stores/SessionStore";
+import InternalStore from "../stores/InternalStore";
 
 function SideMenu() {
   const [tenantId, setTenantId] = useState<string>("");
   const [selectedKey, setSelectedKey] = useState<string>("");
+  const [version, setVersion] = useState<string>("");
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -36,7 +41,7 @@ function SideMenu() {
   };
 
   const getTenantOptions = (search: string, fn: OptionsCallbackFunc) => {
-    let req = new ListTenantsRequest();
+    const req = new ListTenantsRequest();
     req.setSearch(search);
     req.setLimit(10);
 
@@ -62,7 +67,7 @@ function SideMenu() {
     navigate(`/tenants/${value}`);
   };
 
-  const parseLocation = () => {
+  const parseLocation = useCallback(() => {
     const path = location.pathname;
     const tenantRe = /\/tenants\/([\w-]{36})/g;
     const match = tenantRe.exec(path);
@@ -125,27 +130,38 @@ function SideMenu() {
       setSelectedKey("tenant-gateways");
     }
 
+    // tenant gateway-mesh
+    if (/\/tenants\/[\w-]{36}\/gateways\/mesh.*/g.exec(path)) {
+      setSelectedKey("tenant-gateways-mesh");
+    }
+
     // tenant applications
     if (/\/tenants\/[\w-]{36}\/applications.*/g.exec(path)) {
       setSelectedKey("tenant-applications");
     }
-  };
+  }, [location.pathname, tenantId]);
 
   useEffect(() => {
     SessionStore.on("tenant.change", setTenant);
     setTenant();
     parseLocation();
 
+    if (SessionStore.isAdmin()) {
+      InternalStore.getVersion((resp: GetVersionResponse) => {
+        setVersion(resp.getVersion());
+      });
+    }
+
     return () => {
       SessionStore.removeListener("tenant.change", setTenant);
     };
-  }, []);
+  }, [parseLocation]);
 
   useEffect(() => {
     parseLocation();
-  }, [location]);
+  }, [location, parseLocation]);
 
-  let items: MenuProps["items"] = [];
+  const items: MenuProps["items"] = [];
 
   if (SessionStore.isAdmin()) {
     items.push({
@@ -232,6 +248,11 @@ function SideMenu() {
           label: <Link to={`/tenants/${tenantId}/gateways`}>Gateways</Link>,
         },
         {
+          key: "tenant-gateways-mesh",
+          icon: <RadarChartOutlined />,
+          label: <Link to={`/tenants/${tenantId}/gateways/mesh/relays`}>Gateway Mesh</Link>,
+        },
+        {
           key: "tenant-applications",
           icon: <AppstoreOutlined />,
           label: <Link to={`/tenants/${tenantId}/applications`}>Applications</Link>,
@@ -244,7 +265,7 @@ function SideMenu() {
     <div>
       <Autocomplete
         placeholder="Select tenant"
-        className="organiation-select"
+        className="tenant-select"
         getOption={getTenantOption}
         getOptions={getTenantOptions}
         onSelect={onTenantSelect}
@@ -257,6 +278,11 @@ function SideMenu() {
         expandIcon={<div></div>}
         items={items}
       />
+      <Admin>
+        <Typography.Text type="secondary" className="version">
+          Version: v{version}
+        </Typography.Text>
+      </Admin>
     </div>
   );
 }

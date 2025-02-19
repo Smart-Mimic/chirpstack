@@ -7,27 +7,6 @@ services:
     command: bash -c "cd rust && make all"
     volumes:
       - ./:/chirpstack/api
-  chirpstack-api-go:
-    build:
-      context: .
-      dockerfile: Dockerfile-go
-    command: bash -c "cd go && make all"
-    volumes:
-      - ./:/chirpstack/api
-  chirpstack-api-grpc-web:
-    build:
-      context: .
-      dockerfile: Dockerfile-grpc-web
-    command: bash -c "cd grpc-web && make all"
-    volumes:
-      - ./:/chirpstack/api
-  chirpstack-api-js:
-    build:
-      context: .
-      dockerfile: Dockerfile-js
-    command: bash -c "cd js && make all"
-    volumes:
-      - ./:/chirpstack/api
   chirpstack-api-python:
     build:
       context: .
@@ -61,5 +40,19 @@ services:
       context: .
       dockerfile: Dockerfile-csharp
     command: bash -c "cd csharp && make all"
+    volumes:
+      - ./:/chirpstack/api
+  chirpstack-api-php:
+    build:
+      context: .
+      dockerfile: Dockerfile-php
+    command: bash -c "cd php && make all"
+    volumes:
+      - ./:/chirpstack/api
+  chirpstack-api-c:
+    build:
+      context: .
+      dockerfile: Dockerfile-c
+    command: bash -c "cd c && make all"
     volumes:
       - ./:/chirpstack/api

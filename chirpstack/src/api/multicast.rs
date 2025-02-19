@@ -47,7 +47,7 @@ impl MulticastGroupService for MulticastGroup {
             .await?;
 
         let mg = multicast::MulticastGroup {
-            application_id: app_id,
+            application_id: app_id.into(),
             name: req_mg.name.clone(),
             region: req_mg.region().from_proto(),
             mc_addr: DevAddr::from_str(&req_mg.mc_addr).map_err(|e| e.status())?,
@@ -61,7 +61,14 @@ impl MulticastGroupService for MulticastGroup {
             .to_string(),
             dr: req_mg.dr as i16,
             frequency: req_mg.frequency as i64,
-            class_b_ping_slot_period: req_mg.class_b_ping_slot_period as i32,
+            class_b_ping_slot_nb_k: if req_mg.class_b_ping_slot_period != 0 {
+                // For backwards compatibility.
+                (req_mg.class_b_ping_slot_period / 32)
+                    .checked_ilog2()
+                    .unwrap_or_default()
+            } else {
+                req_mg.class_b_ping_slot_nb_k
+            } as i16,
             class_c_scheduling_type: req_mg.class_c_scheduling_type().from_proto(),
             ..Default::default()
         };
@@ -114,7 +121,8 @@ impl MulticastGroupService for MulticastGroup {
                 .into(),
                 dr: mg.dr as u32,
                 frequency: mg.frequency as u32,
-                class_b_ping_slot_period: mg.class_b_ping_slot_period as u32,
+                class_b_ping_slot_period: (1 << (mg.class_b_ping_slot_nb_k as u32)) * 32,
+                class_b_ping_slot_nb_k: mg.class_b_ping_slot_nb_k as u32,
                 class_c_scheduling_type: mg.class_c_scheduling_type.to_proto().into(),
             }),
             created_at: Some(helpers::datetime_to_prost_timestamp(&mg.created_at)),
@@ -146,7 +154,7 @@ impl MulticastGroupService for MulticastGroup {
             .await?;
 
         let _ = multicast::update(multicast::MulticastGroup {
-            id: mg_id,
+            id: mg_id.into(),
             name: req_mg.name.clone(),
             region: req_mg.region().from_proto(),
             mc_addr: DevAddr::from_str(&req_mg.mc_addr).map_err(|e| e.status())?,
@@ -160,7 +168,14 @@ impl MulticastGroupService for MulticastGroup {
             .to_string(),
             dr: req_mg.dr as i16,
             frequency: req_mg.frequency as i64,
-            class_b_ping_slot_period: req_mg.class_b_ping_slot_period as i32,
+            class_b_ping_slot_nb_k: if req_mg.class_b_ping_slot_period != 0 {
+                // For backwards compatibility.
+                (req_mg.class_b_ping_slot_period / 32)
+                    .checked_ilog2()
+                    .unwrap_or_default()
+            } else {
+                req_mg.class_b_ping_slot_nb_k
+            } as i16,
             class_c_scheduling_type: req_mg.class_c_scheduling_type().from_proto(),
             ..Default::default()
         })
@@ -393,9 +408,17 @@ impl MulticastGroupService for MulticastGroup {
             .await?;
 
         let f_cnt = downlink::multicast::enqueue(multicast::MulticastGroupQueueItem {
-            multicast_group_id: mg_id,
+            multicast_group_id: mg_id.into(),
             f_port: req_enq.f_port as i16,
             data: req_enq.data.clone(),
+            expires_at: if let Some(expires_at) = req_enq.expires_at {
+                let expires_at: std::time::SystemTime = expires_at
+                    .try_into()
+                    .map_err(|e: prost_types::TimestampError| e.status())?;
+                Some(expires_at.into())
+            } else {
+                None
+            },
             ..Default::default()
         })
         .await
@@ -463,6 +486,10 @@ impl MulticastGroupService for MulticastGroup {
                     f_cnt: qi.f_cnt as u32,
                     f_port: qi.f_port as u32,
                     data: qi.data.clone(),
+                    expires_at: qi.expires_at.map(|v| {
+                        let v: std::time::SystemTime = v.into();
+                        v.into()
+                    }),
                 });
             }
         }
@@ -535,7 +562,7 @@ pub mod test {
         // create application
         let app = application::create(application::Application {
             name: "test-app".into(),
-            tenant_id: t.id.clone(),
+            tenant_id: t.id,
             ..Default::default()
         })
         .await
@@ -544,7 +571,7 @@ pub mod test {
         // create device-profile
         let dp = device_profile::create(device_profile::DeviceProfile {
             name: "test-dp".into(),
-            tenant_id: t.id.clone(),
+            tenant_id: t.id,
             ..Default::default()
         })
         .await
@@ -579,7 +606,7 @@ pub mod test {
                     group_type: api::MulticastGroupType::ClassC.into(),
                     dr: 3,
                     frequency: 868300000,
-                    class_b_ping_slot_period: 1,
+                    class_b_ping_slot_nb_k: 1,
                     class_c_scheduling_type: api::MulticastGroupSchedulingType::GpsTime.into(),
                     ..Default::default()
                 }),
@@ -609,7 +636,8 @@ pub mod test {
                 group_type: api::MulticastGroupType::ClassC.into(),
                 dr: 3,
                 frequency: 868300000,
-                class_b_ping_slot_period: 1,
+                class_b_ping_slot_nb_k: 1,
+                class_b_ping_slot_period: 64,
                 class_c_scheduling_type: api::MulticastGroupSchedulingType::GpsTime.into(),
             }),
             get_resp.get_ref().multicast_group
@@ -631,7 +659,8 @@ pub mod test {
                     group_type: api::MulticastGroupType::ClassB.into(),
                     dr: 2,
                     frequency: 868200000,
-                    class_b_ping_slot_period: 2,
+                    class_b_ping_slot_nb_k: 2,
+                    class_b_ping_slot_period: 0,
                     class_c_scheduling_type: api::MulticastGroupSchedulingType::Delay.into(),
                 }),
             },
@@ -659,7 +688,8 @@ pub mod test {
                 group_type: api::MulticastGroupType::ClassB.into(),
                 dr: 2,
                 frequency: 868200000,
-                class_b_ping_slot_period: 2,
+                class_b_ping_slot_nb_k: 2,
+                class_b_ping_slot_period: 128,
                 class_c_scheduling_type: api::MulticastGroupSchedulingType::Delay.into(),
             }),
             get_resp.get_ref().multicast_group
@@ -760,6 +790,7 @@ pub mod test {
                 f_cnt: 31,
                 f_port: 10,
                 data: vec![1, 2, 3],
+                expires_at: None,
             },
             list_queue_resp.items[0]
         );
@@ -853,7 +884,7 @@ pub mod test {
 
     fn get_request<T>(user_id: &Uuid, req: T) -> Request<T> {
         let mut req = Request::new(req);
-        req.extensions_mut().insert(AuthID::User(user_id.clone()));
+        req.extensions_mut().insert(AuthID::User(*user_id));
         req
     }
 }

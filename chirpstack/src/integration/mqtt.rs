@@ -19,7 +19,7 @@ use tracing::{error, info, trace, warn};
 
 use super::Integration as IntegrationTrait;
 use crate::config::MqttIntegration as Config;
-use crate::helpers::tls::{get_root_certs, load_cert, load_key};
+use crate::helpers::tls22::{get_root_certs, load_cert, load_key};
 use chirpstack_api::integration;
 
 pub struct Integration<'a> {
@@ -110,14 +110,15 @@ impl<'a> Integration<'a> {
 
             let client_conf = if conf.tls_cert.is_empty() && conf.tls_key.is_empty() {
                 rustls::ClientConfig::builder()
-                    .with_safe_defaults()
                     .with_root_certificates(root_certs.clone())
                     .with_no_client_auth()
             } else {
                 rustls::ClientConfig::builder()
-                    .with_safe_defaults()
                     .with_root_certificates(root_certs.clone())
-                    .with_client_auth_cert(load_cert(&conf.tls_cert)?, load_key(&conf.tls_key)?)?
+                    .with_client_auth_cert(
+                        load_cert(&conf.tls_cert).await?,
+                        load_key(&conf.tls_key).await?,
+                    )?
             };
 
             mqtt_opts.set_transport(Transport::tls_with_config(client_conf.into()));

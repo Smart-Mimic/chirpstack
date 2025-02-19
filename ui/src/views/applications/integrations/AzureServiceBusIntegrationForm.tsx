@@ -12,7 +12,7 @@ interface IProps {
 function AzureServiceBusIntegrationForm(props: IProps) {
   const onFinish = (values: AzureServiceBusIntegration.AsObject) => {
     const v = Object.assign(props.initialValues.toObject(), values);
-    let i = new AzureServiceBusIntegration();
+    const i = new AzureServiceBusIntegration();
 
     i.setApplicationId(v.applicationId);
     i.setEncoding(v.encoding);
@@ -23,7 +23,12 @@ function AzureServiceBusIntegrationForm(props: IProps) {
   };
 
   return (
-    <Form layout="vertical" initialValues={props.initialValues.toObject()} onFinish={onFinish} onFinishFailed={onFinishFailed}>
+    <Form
+      layout="vertical"
+      initialValues={props.initialValues.toObject()}
+      onFinish={onFinish}
+      onFinishFailed={onFinishFailed}
+    >
       <Form.Item
         label="Payload encoding"
         name="encoding"

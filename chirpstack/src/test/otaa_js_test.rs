@@ -8,6 +8,7 @@ use crate::{
     uplink,
 };
 use chirpstack_api::{common, gw, integration as integration_pb, internal};
+use lrwn::region::CommonName;
 use lrwn::{DevAddr, EUI64Prefix, EUI64};
 
 struct Test {
@@ -33,7 +34,7 @@ async fn test_js() {
 
     let gw = gateway::create(gateway::Gateway {
         name: "gw".into(),
-        tenant_id: t.id.clone(),
+        tenant_id: t.id,
         gateway_id: EUI64::from_be_bytes([1, 2, 3, 4, 5, 6, 7, 8]),
         ..Default::default()
     })
@@ -42,7 +43,7 @@ async fn test_js() {
 
     let dp = device_profile::create(device_profile::DeviceProfile {
         name: "dp".into(),
-        tenant_id: t.id.clone(),
+        tenant_id: t.id,
         region: lrwn::region::CommonName::EU868,
         mac_version: lrwn::region::MacVersion::LORAWAN_1_0_3,
         reg_params_revision: lrwn::region::Revision::A,
@@ -54,7 +55,7 @@ async fn test_js() {
 
     let app = application::create(application::Application {
         name: "app".into(),
-        tenant_id: t.id.clone(),
+        tenant_id: t.id,
         ..Default::default()
     })
     .await
@@ -62,8 +63,8 @@ async fn test_js() {
 
     let dev = device::create(device::Device {
         name: "dev".into(),
-        application_id: app.id.clone(),
-        device_profile_id: dp.id.clone(),
+        application_id: app.id,
+        device_profile_id: dp.id,
         dev_eui: EUI64::from_be_bytes([1, 2, 3, 4, 5, 6, 7, 8]),
         ..Default::default()
     })
@@ -74,19 +75,13 @@ async fn test_js() {
         frequency: 868100000,
         ..Default::default()
     };
-    uplink::helpers::set_uplink_modulation(&"eu868", &mut tx_info, 0).unwrap();
+    uplink::helpers::set_uplink_modulation("eu868", &mut tx_info, 0).unwrap();
 
-    let mut rx_info = gw::UplinkRxInfo {
+    let rx_info = gw::UplinkRxInfo {
         gateway_id: gw.gateway_id.to_string(),
         location: Some(Default::default()),
         ..Default::default()
     };
-    rx_info
-        .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
 
     let phy = lrwn::PhyPayload {
         mhdr: lrwn::MHDR {
@@ -95,7 +90,7 @@ async fn test_js() {
         },
         payload: lrwn::Payload::JoinRequest(lrwn::JoinRequestPayload {
             join_eui: EUI64::from_be_bytes([1, 2, 3, 4, 5, 6, 7, 8]),
-            dev_eui: dev.dev_eui.clone(),
+            dev_eui: dev.dev_eui,
             dev_nonce: 1,
         }),
         mic: Some([1, 2, 3, 4]),
@@ -153,7 +148,7 @@ async fn test_js() {
             },
             assert: vec![
                 assert::device_session(
-                    dev.dev_eui.clone(),
+                    dev.dev_eui,
                     internal::DeviceSession {
                         dev_addr: vec![1, 2, 3, 4],
                         mac_version: common::MacVersion::Lorawan103.into(),
@@ -188,6 +183,7 @@ async fn test_js() {
                     }),
                     dev_addr: "01020304".into(),
                     join_server_context: None,
+                    region_config_id: "eu868".into(),
                     ..Default::default()
                 }),
             ],
@@ -220,7 +216,7 @@ async fn test_js() {
             },
             assert: vec![
                 assert::device_session(
-                    dev.dev_eui.clone(),
+                    dev.dev_eui,
                     internal::DeviceSession {
                         dev_addr: vec![1, 2, 3, 4],
                         mac_version: common::MacVersion::Lorawan103.into(),
@@ -255,6 +251,7 @@ async fn test_js() {
                         session_key_id: "01020304".into(),
                         ..Default::default()
                     }),
+                    region_config_id: "eu868".into(),
                     ..Default::default()
                 }),
             ],
@@ -290,7 +287,7 @@ async fn test_js() {
             },
             assert: vec![
                 assert::device_session(
-                    dev.dev_eui.clone(),
+                    dev.dev_eui,
                     internal::DeviceSession {
                         dev_addr: vec![1, 2, 3, 4],
                         mac_version: common::MacVersion::Lorawan103.into(),
@@ -331,6 +328,7 @@ async fn test_js() {
                         }),
                         ..Default::default()
                     }),
+                    region_config_id: "eu868".into(),
                     ..Default::default()
                 }),
             ],
@@ -365,12 +363,14 @@ async fn run_test(t: &Test) {
     joinserver::setup().await.unwrap();
 
     integration::set_mock().await;
-    gateway_backend::set_backend(&"eu868", Box::new(gateway_backend::mock::Backend {})).await;
+    gateway_backend::set_backend("eu868", Box::new(gateway_backend::mock::Backend {})).await;
 
     integration::mock::reset().await;
     gateway_backend::mock::reset().await;
 
     uplink::handle_uplink(
+        CommonName::EU868,
+        "eu868".into(),
         Uuid::new_v4(),
         gw::UplinkFrameSet {
             phy_payload: t.phy_payload.to_vec().unwrap(),

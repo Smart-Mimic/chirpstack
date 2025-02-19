@@ -7,6 +7,8 @@ option java_package = "io.chirpstack.api";
 option java_multiple_files = true;
 option java_outer_classname = "CommonProto";
 option csharp_namespace = "Chirpstack.Common";
+option php_namespace = "Chirpstack\\Common";
+option php_metadata_namespace = "GPBMetadata\\Chirpstack\\Common";
 
 import "google/protobuf/timestamp.proto";
 
@@ -107,6 +109,7 @@ enum RegParamsRevision {
   RP002_1_0_1 = 3;
   RP002_1_0_2 = 4;
   RP002_1_0_3 = 5;
+  RP002_1_0_4 = 6;
 }
 
 enum LocationSource {
@@ -141,6 +144,9 @@ enum Aggregation {
 
   // Month.
   MONTH = 2;
+
+  // Minute.
+  MINUTE = 3;
 }
 
 enum MetricKind {
@@ -153,6 +159,14 @@ enum MetricKind {
 
   // E.g. a temperature value.
   GAUGE = 2;
+}
+
+enum Regulation {
+  // Unknown.
+  REGULATION_UNKNOWN = 0;
+
+  // ETSI EN 300 220.
+  ETSI_EN_300_220 = 1;
 }
 
 message Location {

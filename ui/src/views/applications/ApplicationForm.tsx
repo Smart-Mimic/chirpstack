@@ -13,7 +13,7 @@ interface IProps {
 function ApplicationForm(props: IProps) {
   const onFinish = (values: Application.AsObject) => {
     const v = Object.assign(props.initialValues.toObject(), values);
-    let app = new Application();
+    const app = new Application();
 
     app.setId(v.id);
     app.setTenantId(v.tenantId);
@@ -29,7 +29,12 @@ function ApplicationForm(props: IProps) {
   };
 
   return (
-    <Form layout="vertical" initialValues={props.initialValues.toObject()} onFinish={onFinish} onFinishFailed={onFinishFailed}>
+    <Form
+      layout="vertical"
+      initialValues={props.initialValues.toObject()}
+      onFinish={onFinish}
+      onFinishFailed={onFinishFailed}
+    >
       <Tabs>
         <Tabs.TabPane tab="General" key="1">
           <Form.Item label="Name" name="name" rules={[{ required: true, message: "Please enter a name!" }]}>

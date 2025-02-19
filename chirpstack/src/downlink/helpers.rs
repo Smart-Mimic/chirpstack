@@ -74,10 +74,13 @@ pub fn select_downlink_gateway(
     // Return a random item from the new_items slice (filtered by min_snr_margin).
     // If new_items is empty, then choose will return None and we return the first item from
     // rx_info.item.
-    Ok(match new_items.choose(&mut rand::thread_rng()) {
-        Some(v) => v.clone(),
-        None => rx_info.items[0].clone(),
-    })
+    // Ok(match new_items.choose(&mut rand::thread_rng()) {
+    //     Some(v) => v.clone(),
+    //     None => rx_info.items[0].clone(),
+    // })
+
+    // Always return the first gateway (best SNR/RSSI)
+    Ok(rx_info.items[0].clone())
 }
 
 pub fn set_tx_info_data_rate(
@@ -239,7 +242,7 @@ mod tests {
             },
             // is_private_down is set, first gateway matches tenant.
             Test {
-                tenant_id: Some(t.id),
+                tenant_id: Some(t.id.into()),
                 min_snr_margin: 0.0,
                 rx_info: internal::DeviceGatewayRxInfo {
                     items: vec![
@@ -262,7 +265,7 @@ mod tests {
             },
             // is_private_down is set, second gateway matches tenant.
             Test {
-                tenant_id: Some(t.id),
+                tenant_id: Some(t.id.into()),
                 min_snr_margin: 0.0,
                 rx_info: internal::DeviceGatewayRxInfo {
                     items: vec![
@@ -319,7 +322,7 @@ mod tests {
             for _ in 0..100 {
                 let out = select_downlink_gateway(
                     test.tenant_id,
-                    &"eu868",
+                    "eu868",
                     test.min_snr_margin,
                     &mut rx_info,
                 )
@@ -328,8 +331,7 @@ mod tests {
             }
 
             assert_eq!(test.expected_gws.len(), gw_map.len());
-            assert_eq!(
-                true,
+            assert!(
                 expected_gws.keys().all(|k| gw_map.contains_key(k)),
                 "Expected: {:?}, got: {:?}",
                 expected_gws,
