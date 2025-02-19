@@ -10,9 +10,9 @@ plugins {
 
 group = "io.chirpstack"
 <<<<<<< HEAD
-version = "4.11.1"
+version = "4.11.2"
 =======
-version = "4.11.1"
+version = "4.11.2"
 >>>>>>> v4.11.1
 
 repositories {
