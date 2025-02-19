@@ -101,11 +101,7 @@ jobs:
         uses: docker/metadata-action@v3
         with:
           images: |
-<<<<<<< HEAD
             smartmimic/${{ github.event.repository.name }}
-=======
-            chirpstack/${{ github.event.repository.name }}${{ matrix.database != 'postgres' && format('-{0}', matrix.database) || '' }}
->>>>>>> v4.11.1
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}
