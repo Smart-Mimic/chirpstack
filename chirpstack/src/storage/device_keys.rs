@@ -133,8 +133,8 @@ pub async fn validate_incr_join_and_store_dev_nonce(
                 }
 
                 dk.dev_nonces.push(Some(dev_nonce));
-                // dk.join_nonce += 1;
-                let random_join_nonce = OsRng.gen_range(0..=(1 << 24) - 1);
+
+                let random_join_nonce = OsRng.gen_range(0..(1 << 24));
                 dk.join_nonce = random_join_nonce;
 
                 diesel::update(device_keys::dsl::device_keys.find(&dev_eui))
@@ -148,10 +148,14 @@ pub async fn validate_incr_join_and_store_dev_nonce(
                     .map_err(|e| Error::from_diesel(e, dev_eui.to_string()))
             })
         })
-    })
-    .await?;
+        .await?;
 
-    info!(dev_eui = %dev_eui, dev_nonce = dev_nonce, "Device-nonce validated, join-nonce incremented and stored");
+    info!(
+        dev_eui = %dev_eui, 
+        dev_nonce = dev_nonce, 
+        "Device-nonce validated, join-nonce incremented and stored"
+    );
+
     Ok(dk)
 }
 
