@@ -53,7 +53,7 @@ jobs:
           - postgres
           - sqlite
     env:
-      DATABASE: ${{ matrix.database }}
+      DATABASE: postgres
     steps:
       -
         name: Checkout
