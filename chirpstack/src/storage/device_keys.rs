@@ -10,7 +10,7 @@ use rand::rngs::OsRng;
 
 use super::error::Error;
 use super::schema::device_keys;
-use super::{db_transaction, fields, get_async_db_conn};
+use super::{fields, get_async_db_conn};
 
 #[derive(Queryable, Insertable, AsChangeset, PartialEq, Eq, Debug, Clone)]
 #[diesel(table_name = device_keys)]
@@ -114,7 +114,7 @@ pub async fn set_dev_nonces(
 pub async fn validate_incr_join_and_store_dev_nonce(
     join_eui: EUI64,
     dev_eui: EUI64,
-    dev_nonce: u16,
+    dev_nonce: i32,
 ) -> Result<DeviceKeys, Error> {
     let mut c = get_async_db_conn().await?;
     let dk: DeviceKeys = c
@@ -145,7 +145,7 @@ pub async fn validate_incr_join_and_store_dev_nonce(
                     ))
                     .get_result(c)
                     .await
-                    .map_err(|e| Error::from_diesel(e, dev_eui.to_string()))
+                    .map_err(|e| Error::from_diesel(e, dev_eui.to_string()));
             })
         })
         .await?;

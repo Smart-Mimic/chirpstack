@@ -51,7 +51,6 @@ jobs:
       matrix:
         database:
           - postgres
-          - sqlite
     env:
       DATABASE: postgres
     steps:

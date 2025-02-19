@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use anyhow::Result;
-use rand::seq::SliceRandom;
+//use rand::seq::SliceRandom;
 use uuid::Uuid;
 
 use chirpstack_api::{gw, internal};
@@ -20,7 +20,6 @@ use crate::region;
 pub fn select_downlink_gateway(
     tenant_id: Option<Uuid>,
     region_config_id: &str,
-    min_snr_margin: f32,
     rx_info: &mut internal::DeviceGatewayRxInfo,
 ) -> Result<internal::DeviceGatewayRxInfoItem> {
     rx_info.items.retain(|rx_info| {
@@ -49,10 +48,10 @@ pub fn select_downlink_gateway(
     let region_conf = region::get(region_config_id)?;
 
     let dr = region_conf.get_data_rate(rx_info.dr as u8)?;
-    let mut required_snr: Option<f32> = None;
-    if let DataRateModulation::Lora(dr) = dr {
-        required_snr = Some(config::get_required_snr_for_sf(dr.spreading_factor)?);
-    }
+    //let mut required_snr: Option<f32> = None;
+    //if let DataRateModulation::Lora(dr) = dr {
+    //    required_snr = Some(config::get_required_snr_for_sf(dr.spreading_factor)?);
+    //}
 
     // sort items by SNR or if SNR is equal between A and B, by RSSI.
     rx_info.items.sort_by(|a, b| {
@@ -306,7 +305,6 @@ mod tests {
                 let out = select_downlink_gateway(
                     test.tenant_id,
                     "eu868",
-                    test.min_snr_margin,
                     &mut rx_info,
                 )
                 .unwrap();
