@@ -1,9 +1,11 @@
-use handlebars::{no_escape, Handlebars};
+use handlebars::Handlebars;
 
 use super::super::config;
 
 pub fn run() {
-    let template = r#"
+    #[allow(clippy::useless_vec)]
+    let template = vec![
+r#"
 # Logging configuration
 [logging]
 
@@ -15,12 +17,13 @@ pub fn run() {
   #   * INFO
   #   * WARN
   #   * ERROR
-  #   * OFF
   level="{{ logging.level }}"
 
   # Log as JSON.
   json={{ logging.json }}
-
+"#,
+#[cfg(feature = "postgres")]
+r#"
 # PostgreSQL configuration.
 [postgresql]
 
@@ -29,10 +32,9 @@ pub fn run() {
   # Format example: postgres://<USERNAME>:<PASSWORD>@<HOSTNAME>/<DATABASE>?sslmode=<SSLMODE>.
   #
   # SSL mode options:
-  #  * disable - no SSL
-  #  * require - Always SSL (skip verification)
-  #  * verify-ca - Always SSL (verify that the certificate presented by the server was signed by a trusted CA)
-  #  * verify-full - Always SSL (verify that the certification presented by the server was signed by a trusted CA and the server host name matches the one in the certificate)
+  #  * disable - Do not use TLS
+  #  * prefer - Attempt to connect with TLS but allow sessions without
+  #  * require - Require the use of TLS
   dsn="{{ postgresql.dsn }}"
 
   # Max open connections.
@@ -47,8 +49,36 @@ pub fn run() {
   # the server-certificate is not signed by a CA in the platform certificate
   # store.
   ca_cert="{{ postgresql.ca_cert }}"
+"#,
+#[cfg(feature = "sqlite")]
+r#"
+# SQLite configuration.
+[sqlite]
 
+  # Sqlite DB path.
+  #
+  # Format example: sqlite:///<DATABASE>.
+  #
+  path="{{ sqlite.path }}"
 
+  # Max open connections.
+  #
+  # This sets the max. number of open connections that are allowed in the
+  # SQLite connection pool.
+  max_open_connections={{ sqlite.max_open_connections }}
+
+  # PRAGMAs.
+  #
+  # This configures the list of PRAGMAs that are executed to prepare the
+  # SQLite library. For a full list of available PRAGMAs see:
+  # https://www.sqlite.org/pragma.html
+  pragmas=[
+    {{#each sqlite.pragmas}}
+    "{{this}}",
+    {{/each}}
+  ]
+"#,
+r#"
 # Redis configuration.
 [redis]
 
@@ -122,8 +152,11 @@ pub fn run() {
   # will generate client certificates which can be used by the gateway for
   # authentication and authorization. The Common Name of the certificate will
   # be set to the Gateway ID.
-  ca_key="{{ gateway.ca_key }}"
+  #
+  # The ca_key is expected to be in PKCS#8 format (you can use openssl to
+  # convert to PKCS#8).
   ca_cert="{{ gateway.ca_cert }}"
+  ca_key="{{ gateway.ca_key }}"
 
   # Certificate lifetime.
   #
@@ -412,7 +445,7 @@ pub fn run() {
     # TLS certificate file (optional)
     tls_cert="{{ integration.mqtt.tls_cert }}"
 
-    # TLS key file (optional)
+    # TLS key file (PKCS#8) (optional)
     tls_key="{{ integration.mqtt.tls_key }}"
 
 
@@ -425,8 +458,11 @@ pub fn run() {
       # will generate client certificates which can be used by the MQTT clients for
       # authentication and authorization. The Common Name of the certificate will
       # be set to the ID of the application.
-      ca_key="{{ integration.mqtt.client.ca_key }}"
+      #
+      # The ca_key is expected to be in PKCS#8 format (you can use openssl to
+      # convert to PKCS#8).
       ca_cert="{{ integration.mqtt.client.ca_cert }}"
+      ca_key="{{ integration.mqtt.client.ca_key }}"
 
       # Certificate lifetime.
       #
@@ -613,6 +649,15 @@ pub fn run() {
     # is needed.
     assume_email_verified={{ user_authentication.openid_connect.assume_email_verified }}
 
+    # Scopes.
+    #
+    # This configures the scopes that are used during login. You must at least define
+    # "email" and "profile".
+    scopes=[
+      {{#each user_authentication.openid_connect.scopes}}
+      "{{this}}",
+      {{/each}}
+    ]
 
   # OAuth2 backend.
   [user_authentication.oauth2]
@@ -690,6 +735,16 @@ pub fn run() {
     # If set to true, then ChirpStack will ignore the email_verified received
     # from the userinfo URL, assuming it will be true.
     assume_email_verified={{ user_authentication.oauth2.assume_email_verified }}
+
+    # Scopes.
+    #
+    # This configures the scopes that are used during login. You must at least define
+    # "email".
+    scopes=[
+      {{#each user_authentication.oauth2.scopes}}
+      "{{this}}",
+      {{/each}}
+    ]
 
 
 # Join Server configuration.
@@ -769,7 +824,7 @@ pub fn run() {
   # TLS certificate (path).
   tls_cert="{{ backend_interfaces.tls_cert }}"
 
-  # TLS key (path).
+  # TLS key (PKCS#8) (path).
   tls_key="{{ backend_interfaces.tls_key }}"
 
 
@@ -778,6 +833,57 @@ pub fn run() {
 
   # Resolve NetID domain suffix.
   resolve_net_id_domain_suffix="{{ backend_interfaces.resolve_net_id_domain_suffix }}"
+
+
+  # Default roaming server.
+  [roaming.default]
+
+    # Enable default roaming server.
+    enabled={{roaming.default.enabled}}
+
+    # Async timeout (set to 0 to disable async interface).
+    async_timeout="{{roaming.default.async_timeout}}"
+
+    # Passive-roaming session lifetime (set to 0 for stateless).
+    passive_roaming_lifetime="{{roaming.default.passive_roaming_lifetime}}"
+   
+    # Passive-roaming KEK label (optional).
+    #
+    # If set, the session-keys will be encrypted using the given KEK.
+    passive_roaming_kek_label="{{roaming.default.passive_roaming_kek_label}}"
+
+    # Passive-roaming validate MIC.
+    #
+    # If set ChirpStack will validate the MIC (for non-stateless roaming
+    # agreements). As well it means it will expose the NwkSKey / FNwkSIntKey
+    # on PRStartAns.
+    passive_roaming_validate_mic={{roaming.default.passive_roaming_validate_mic}}
+   
+    # Server.
+    #
+    # If set, this will bypass the DNS resolving of the server.
+    server="{{roaming.default.server}}"
+   
+    # Use target role suffix.
+    #
+    # Depending the context of the remote server, this will add
+    # the /sns or /fns path to the server endpoint.
+    use_target_role_suffix={{roaming.default.use_target_role_suffix}}
+   
+    # CA certificate (path).
+    ca_cert="{{roaming.default.ca_cert}}"
+  
+    # TLS certificate (path).
+    tls_cert="{{roaming.default.tls_cert}}"
+  
+    # TLS key (PKCS#8) (path).
+    tls_key="{{roaming.default.tls_key}}"
+   
+    # Authorization header.
+    #
+    # Optional value of the Authorization header, e.g. token or password.
+    authorization_header="{{roaming.default.authorization_header}}"
+
 
   # Per server roaming configuration (this can be repeated).
   # Example:
@@ -796,6 +902,13 @@ pub fn run() {
   #  #
   #  # If set, the session-keys will be encrypted using the given KEK.
   #  passive_roaming_kek_label=""
+
+  #  # Passive-roaming validate MIC.
+  #  #
+  #  # If set ChirpStack will validate the MIC (for non-stateless roaming
+  #  # agreements). As well it means it will expose the NwkSKey / FNwkSIntKey
+  #  # on PRStartAns.
+  #  passive_roaming_validate_mic=false
   #
   #  # Server.
   #  #
@@ -814,7 +927,7 @@ pub fn run() {
   #  # TLS certificate (path).
   #  tls_cert=""
   #
-  #  # TLS key (path).
+  #  # TLS key (PKCS#8) (path).
   #  tls_key=""
   #
   #  # Authorization header.
@@ -828,6 +941,7 @@ pub fn run() {
     async_timeout="{{ this.async_timeout }}"
     passive_roaming_lifetime="{{ this.passive_roaming_lifetime }}"
     passive_roaming_kek_label="{{ this.passive_roaming_kek_label }}"
+    passive_roaming_validate_mic={{ this.passive_roaming_validate_mic }}
     server="{{ this.server }}"
     use_target_role_suffix="{{ this.use_target_role_suffix }}"
     ca_cert="{{ this.ca_cert }}"
@@ -860,14 +974,30 @@ pub fn run() {
   label="{{ this.label }}"
   kek="{{ this.kek }}"
 {{/each}}
-"#;
+
+
+# UI configuration.
+[ui]
+  # Tileserver URL.
+  #
+  # This configures the tileserver used in the UI to display maps.
+  # The default value uses the OSM tiles.
+  tileserver_url="{{ui.tileserver_url}}"
+
+  # Map attribution.
+  #
+  # This configures the map attribution. The default attribution relates to the
+  # default tileserver_url (OSM). If you configure a different tile-server, you
+  # might need to update the map_attribution.
+  map_attribution="{{ui.map_attribution}}"
+"#].join("\n");
 
     let mut reg = Handlebars::new();
-    reg.register_escape_fn(no_escape);
+    reg.register_escape_fn(|s| s.to_string().replace('"', r#"\""#));
     let conf = config::get();
     println!(
         "{}",
-        reg.render_template(template, &conf)
+        reg.render_template(&template, &conf)
             .expect("render configfile error")
     );
 }

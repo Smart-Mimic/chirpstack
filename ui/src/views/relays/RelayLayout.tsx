@@ -1,15 +1,17 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Route, Routes, useParams, Link } from "react-router-dom";
 
 import { Space, Breadcrumb, Card, Menu } from "antd";
 import { PageHeader } from "@ant-design/pro-layout";
 
-import { Application } from "@chirpstack/chirpstack-api-grpc-web/api/application_pb";
-import { Tenant } from "@chirpstack/chirpstack-api-grpc-web/api/tenant_pb";
-import { Device, GetDeviceRequest, GetDeviceResponse } from "@chirpstack/chirpstack-api-grpc-web/api/device_pb";
+import type { Application } from "@chirpstack/chirpstack-api-grpc-web/api/application_pb";
+import type { Tenant } from "@chirpstack/chirpstack-api-grpc-web/api/tenant_pb";
+import type { Device, GetDeviceResponse } from "@chirpstack/chirpstack-api-grpc-web/api/device_pb";
+import { GetDeviceRequest } from "@chirpstack/chirpstack-api-grpc-web/api/device_pb";
 
 import DeviceStore from "../../stores/DeviceStore";
 import ListRelayDevices from "./ListRelayDevices";
+import { useTitle } from "../helpers";
 
 interface IProps {
   tenant: Tenant;
@@ -19,9 +21,17 @@ interface IProps {
 function RelayLayout(props: IProps) {
   const [relayDevice, setRelayDevice] = useState<Device | undefined>(undefined);
   const { relayDevEui } = useParams();
+  useTitle(
+    "Tenants",
+    props.tenant.getName(),
+    "Applications",
+    props.application.getName(),
+    "Relays",
+    relayDevice?.getName(),
+  );
 
   useEffect(() => {
-    let req = new GetDeviceRequest();
+    const req = new GetDeviceRequest();
     req.setDevEui(relayDevEui!);
 
     DeviceStore.get(req, (resp: GetDeviceResponse) => {
@@ -37,7 +47,7 @@ function RelayLayout(props: IProps) {
     return null;
   }
 
-  let tab = "devices";
+  const tab = "devices";
 
   return (
     <Space direction="vertical" style={{ width: "100%" }} size="large">

@@ -1,14 +1,16 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 
 import { useParams, Link, useNavigate } from "react-router-dom";
 
 import { Space, Breadcrumb, Card, Button } from "antd";
 import { PageHeader } from "@ant-design/pro-layout";
 
-import {
+import type {
   DeviceProfileTemplate,
-  GetDeviceProfileTemplateRequest,
   GetDeviceProfileTemplateResponse,
+} from "@chirpstack/chirpstack-api-grpc-web/api/device_profile_template_pb";
+import {
+  GetDeviceProfileTemplateRequest,
   UpdateDeviceProfileTemplateRequest,
   DeleteDeviceProfileTemplateRequest,
 } from "@chirpstack/chirpstack-api-grpc-web/api/device_profile_template_pb";
@@ -16,15 +18,17 @@ import {
 import DeviceProfileTemplateForm from "./DeviceProfileTemplateForm";
 import DeviceProfileTemplateStore from "../../stores/DeviceProfileTemplateStore";
 import DeleteConfirm from "../../components/DeleteConfirm";
+import { useTitle } from "../helpers";
 
 function EditDeviceProfileTemplate() {
   const navigate = useNavigate();
   const [deviceProfileTemplate, setDeviceProfileTemplate] = useState<DeviceProfileTemplate | undefined>(undefined);
   const { deviceProfileTemplateId } = useParams();
+  useTitle("Network Server", "Device-profile templates", deviceProfileTemplate?.getName());
 
   useEffect(() => {
     const id = deviceProfileTemplateId!;
-    let req = new GetDeviceProfileTemplateRequest();
+    const req = new GetDeviceProfileTemplateRequest();
     req.setId(id);
 
     DeviceProfileTemplateStore.get(req, (resp: GetDeviceProfileTemplateResponse) => {
@@ -33,7 +37,7 @@ function EditDeviceProfileTemplate() {
   }, [deviceProfileTemplateId]);
 
   const onFinish = (obj: DeviceProfileTemplate) => {
-    let req = new UpdateDeviceProfileTemplateRequest();
+    const req = new UpdateDeviceProfileTemplateRequest();
     req.setDeviceProfileTemplate(obj);
 
     DeviceProfileTemplateStore.update(req, () => {
@@ -42,7 +46,7 @@ function EditDeviceProfileTemplate() {
   };
 
   const deleteDeviceProfileTemplate = () => {
-    let req = new DeleteDeviceProfileTemplateRequest();
+    const req = new DeleteDeviceProfileTemplateRequest();
     req.setId(deviceProfileTemplateId!);
 
     DeviceProfileTemplateStore.delete(req, () => {

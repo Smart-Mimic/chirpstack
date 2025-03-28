@@ -299,7 +299,7 @@ impl Configuration {
                                         .collect(),
                                     ),
                                     (
-                                        Revision::Latest, // RP002-1.0.2
+                                        Revision::Latest, // RP002-1.0.2, RP002-1.0.3, RP002-1.0.4
                                         [
                                             (0, MaxPayloadSize { m: 0, n: 0 }),
                                             (1, MaxPayloadSize { m: 0, n: 0 }),
@@ -511,7 +511,7 @@ impl Configuration {
                                         .collect(),
                                     ),
                                     (
-                                        Revision::Latest, // RP002-1.0.2
+                                        Revision::Latest, // RP002-1.0.2, RP002-1.0.3, RP002-1.0.4
                                         [
                                             (0, MaxPayloadSize { m: 59, n: 51 }),
                                             (1, MaxPayloadSize { m: 59, n: 51 }),
@@ -649,7 +649,7 @@ impl Configuration {
                                         .collect(),
                                     ),
                                     (
-                                        Revision::Latest, // RP002-1.0.2
+                                        Revision::Latest, // RP002-1.0.2, RP002-1.0.3, RP002-1.0.4
                                         [
                                             (0, MaxPayloadSize { m: 0, n: 0 }),
                                             (1, MaxPayloadSize { m: 0, n: 0 }),
@@ -861,7 +861,7 @@ impl Configuration {
                                         .collect(),
                                     ),
                                     (
-                                        Revision::Latest, // RP002-1.0.2
+                                        Revision::Latest, // RP002-1.0.2, RP002-1.0.3, RP002-1.0.4
                                         [
                                             (0, MaxPayloadSize { m: 59, n: 51 }),
                                             (1, MaxPayloadSize { m: 59, n: 51 }),
@@ -1219,8 +1219,7 @@ pub mod test {
     use crate::*;
 
     fn config_full() -> Configuration {
-        let c = Configuration::new(false, false);
-        c
+        Configuration::new(false, false)
     }
 
     fn config_chan_8_15() -> Configuration {
@@ -1340,7 +1339,7 @@ pub mod test {
     #[test]
     fn test_cf_list() {
         let c = config_chan_8_15();
-        assert_eq!(true, c.get_cf_list(MacVersion::LORAWAN_1_0_2).is_none());
+        assert!(c.get_cf_list(MacVersion::LORAWAN_1_0_2).is_none());
 
         let lw_11_cf_list = c.get_cf_list(MacVersion::LORAWAN_1_1_0).unwrap();
         assert_eq!(

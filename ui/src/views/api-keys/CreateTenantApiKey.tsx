@@ -1,15 +1,17 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { Space, Breadcrumb, Card } from "antd";
 import { PageHeader } from "@ant-design/pro-layout";
 
-import { ApiKey, CreateApiKeyRequest, CreateApiKeyResponse } from "@chirpstack/chirpstack-api-grpc-web/api/internal_pb";
-import { Tenant } from "@chirpstack/chirpstack-api-grpc-web/api/tenant_pb";
+import type { CreateApiKeyResponse } from "@chirpstack/chirpstack-api-grpc-web/api/internal_pb";
+import { ApiKey, CreateApiKeyRequest } from "@chirpstack/chirpstack-api-grpc-web/api/internal_pb";
+import type { Tenant } from "@chirpstack/chirpstack-api-grpc-web/api/tenant_pb";
 
 import ApiKeyForm from "./ApiKeyForm";
 import ApiKeyToken from "./ApiKeyToken";
 import InternalStore from "../../stores/InternalStore";
+import { useTitle } from "../helpers";
 
 interface IProps {
   tenant: Tenant;
@@ -17,11 +19,12 @@ interface IProps {
 
 function CreateTenantApiKey(props: IProps) {
   const [createApiKeyResponse, setCreateApiKeyResponse] = useState<CreateApiKeyResponse | undefined>(undefined);
+  useTitle("Tenants", props.tenant.getName(), "API Keys", "Add");
 
   const onFinish = (obj: ApiKey) => {
     obj.setTenantId(props.tenant.getId());
 
-    let req = new CreateApiKeyRequest();
+    const req = new CreateApiKeyRequest();
     req.setApiKey(obj);
 
     InternalStore.createApiKey(req, (resp: CreateApiKeyResponse) => {

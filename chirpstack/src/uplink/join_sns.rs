@@ -309,7 +309,7 @@ impl JoinRequest {
         let dev = self.device.as_ref().unwrap();
 
         integration::log_event(
-            app.id,
+            app.id.into(),
             &dev.variables,
             &integration_pb::LogEvent {
                 time: Some(Utc::now().into()),
@@ -338,6 +338,7 @@ impl JoinRequest {
                     .cloned()
                     .collect(),
             },
+            &metrics::Aggregation::default_aggregations(),
         )
         .await?;
 
@@ -352,8 +353,9 @@ impl JoinRequest {
 
         self.device_keys = Some(
             match device_keys::validate_incr_join_and_store_dev_nonce(
-                &dev.dev_eui,
-                join_request.dev_nonce as i32,
+                join_request.join_eui,
+                dev.dev_eui,
+                join_request.dev_nonce,
             )
             .await
             {
@@ -361,7 +363,7 @@ impl JoinRequest {
                 Err(v) => match v {
                     StorageError::InvalidDevNonce => {
                         integration::log_event(
-                            app.id,
+                            app.id.into(),
                             &dev.variables,
                             &integration_pb::LogEvent {
                                 time: Some(Utc::now().into()),
@@ -387,6 +389,7 @@ impl JoinRequest {
                                 kind: metrics::Kind::ABSOLUTE,
                                 metrics: [("error_OTAA".into(), 1f64)].iter().cloned().collect(),
                             },
+                            &metrics::Aggregation::default_aggregations(),
                         )
                         .await?;
 
@@ -621,7 +624,7 @@ impl JoinRequest {
             }
         }
 
-        device.device_session = Some(ds);
+        device.device_session = Some(ds.into());
 
         Ok(())
     }
@@ -647,7 +650,7 @@ impl JoinRequest {
             device::partial_update(
                 self.device.as_ref().unwrap().dev_eui,
                 &device::DeviceChangeset {
-                    device_session: Some(Some(ds.clone())),
+                    device_session: Some(Some(ds.into())),
                     join_eui: Some(self.join_request.as_ref().unwrap().join_eui),
                     dev_addr: Some(Some(self.dev_addr.unwrap())),
                     secondary_dev_addr: Some(None),
@@ -702,9 +705,10 @@ impl JoinRequest {
             } else {
                 None
             },
+            region_config_id: self.uplink_frame_set.region_config_id.clone(),
         };
 
-        integration::join_event(app.id, &dev.variables, &pl).await;
+        integration::join_event(app.id.into(), &dev.variables, &pl).await;
         Ok(())
     }
 

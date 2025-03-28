@@ -172,6 +172,7 @@ impl JoinRequest {
         let sess = internal::PassiveRoamingDeviceSession {
             session_id: sess_id.as_bytes().to_vec(),
             net_id: self.home_net_id.unwrap().to_vec(),
+            validate_mic: roaming::get_passive_roaming_validate_mic(self.home_net_id.unwrap())?,
             dev_addr: pr_start_ans.dev_addr.clone(),
             dev_eui: self.join_request.dev_eui.to_vec(),
             lifetime: {
@@ -179,7 +180,7 @@ impl JoinRequest {
                 if lt == 0 {
                     None
                 } else {
-                    Some((Utc::now() + Duration::seconds(lt)).into())
+                    Some((Utc::now() + Duration::try_seconds(lt).unwrap_or_default()).into())
                 }
             },
             lorawan_1_1: pr_start_ans.f_nwk_s_int_key.is_some(),

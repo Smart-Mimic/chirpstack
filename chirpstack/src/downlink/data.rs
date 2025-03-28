@@ -1,3 +1,4 @@
+use std::cmp;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -362,7 +363,7 @@ impl Data {
         trace!("Selecting downlink gateway");
 
         let gw_down = helpers::select_downlink_gateway(
-            Some(self.tenant.id),
+            Some(self.tenant.id.into()),
             &self.device.get_device_session()?.region_config_id,
             self.network_conf.gateway_prefer_min_margin,
             self.device_gateway_rx_info.as_mut().unwrap(),
@@ -463,10 +464,12 @@ impl Data {
             // The queue item:
             // * should fit within the max payload size
             // * should not be pending
+            // * should not be expired
             // * in case encrypted, should have a valid FCntDown
-            if qi.data.len() <= max_payload_size
-                && !qi.is_pending
-                && !(qi.is_encrypted
+            if !(qi.data.len() > max_payload_size
+                || qi.is_pending
+                || qi.expires_at.is_some() && qi.expires_at.unwrap() < Utc::now()
+                || qi.is_encrypted
                     && (qi.f_cnt_down.unwrap_or_default() as u32) < ds.get_a_f_cnt_down())
             {
                 trace!(id = %qi.id, more_in_queue = more_in_queue, "Found device queue-item for downlink");
@@ -518,10 +521,39 @@ impl Data {
                     },
                 };
 
-                integration::ack_event(self.application.id, &self.device.variables, &pl).await;
+                integration::ack_event(self.application.id.into(), &self.device.variables, &pl)
+                    .await;
                 warn!(dev_eui = %self.device.dev_eui, device_queue_item_id = %qi.id, "Device queue-item discarded because of timeout");
 
                 continue;
+            }
+
+            // Handle expired payload.
+            if let Some(expires_at) = qi.expires_at {
+                if expires_at < Utc::now() {
+                    device_queue::delete_item(&qi.id)
+                        .await
+                        .context("Delete device queue-item")?;
+
+                    let pl = integration_pb::LogEvent {
+                        time: Some(Utc::now().into()),
+                        device_info: Some(device_info.clone()),
+                        level: integration_pb::LogLevel::Error.into(),
+                        code: integration_pb::LogCode::Expired.into(),
+                        description: "Device queue-item discarded because it has expired"
+                            .to_string(),
+                        context: [("queue_item_id".to_string(), qi.id.to_string())]
+                            .iter()
+                            .cloned()
+                            .collect(),
+                    };
+
+                    integration::log_event(self.application.id.into(), &self.device.variables, &pl)
+                        .await;
+                    warn!(dev_eui = %self.device.dev_eui, device_queue_item_id = %qi.id, "Device queue-item discarded because it has expired");
+
+                    continue;
+                }
             }
 
             // Handle payload size.
@@ -548,7 +580,8 @@ impl Data {
                     .collect(),
                 };
 
-                integration::log_event(self.application.id, &self.device.variables, &pl).await;
+                integration::log_event(self.application.id.into(), &self.device.variables, &pl)
+                    .await;
                 warn!(dev_eui = %self.device.dev_eui, device_queue_item_id = %qi.id, "Device queue-item discarded because of max. payload size");
 
                 continue;
@@ -584,7 +617,8 @@ impl Data {
                     .collect(),
                 };
 
-                integration::log_event(self.application.id, &self.device.variables, &pl).await;
+                integration::log_event(self.application.id.into(), &self.device.variables, &pl)
+                    .await;
                 warn!(dev_eui = %self.device.dev_eui, device_queue_item_id = %qi.id, "Device queue-item discarded because of invalid frame-counter");
 
                 continue;
@@ -1348,7 +1382,7 @@ impl Data {
                 ds.last_device_status_request = Some(Utc::now().into());
             }
             Some(ts) => {
-                let ts: DateTime<Utc> = ts.clone().try_into().map_err(anyhow::Error::msg)?;
+                let ts: DateTime<Utc> = (*ts).try_into().map_err(anyhow::Error::msg)?;
                 let req_interval = Duration::from_secs(60 * 60 * 24)
                     / self.device_profile.device_status_req_interval as u32;
 
@@ -1437,9 +1471,14 @@ impl Data {
             self.mac_commands.push(set);
         }
 
-        let rx1_delay = ds.rx1_delay as u8;
-        if rx1_delay != self.network_conf.rx1_delay {
-            let set = maccommand::rx_timing_setup::request(self.network_conf.rx1_delay);
+        let dev_rx1_delay = ds.rx1_delay as u8;
+        let req_rx1_delay = cmp::max(
+            self.network_conf.rx1_delay,
+            self.device_profile.rx1_delay as u8,
+        );
+
+        if dev_rx1_delay != req_rx1_delay {
+            let set = maccommand::rx_timing_setup::request(req_rx1_delay);
             mac_command::set_pending(&self.device.dev_eui, lrwn::CID::RxTimingSetupReq, &set)
                 .await?;
             self.mac_commands.push(set);
@@ -1705,11 +1744,10 @@ impl Data {
 
             match &rd.w_f_cnt_last_request {
                 Some(v) => {
-                    let last_req: DateTime<Utc> =
-                        v.clone().try_into().map_err(anyhow::Error::msg)?;
+                    let last_req: DateTime<Utc> = (*v).try_into().map_err(anyhow::Error::msg)?;
                     if last_req
                         < Utc::now()
-                            .checked_sub_signed(chrono::Duration::hours(24))
+                            .checked_sub_signed(chrono::Duration::try_hours(24).unwrap())
                             .unwrap()
                         && counter < max_count
                     {
@@ -2465,7 +2503,7 @@ impl Data {
         }
 
         // set timing
-        let now_gps_ts = Utc::now().to_gps_time() + chrono::Duration::seconds(1);
+        let now_gps_ts = Utc::now().to_gps_time() + chrono::Duration::try_seconds(1).unwrap();
         let ping_slot_ts = classb::get_next_ping_slot_after(
             now_gps_ts,
             &self.device.get_dev_addr()?,
@@ -2723,7 +2761,7 @@ mod test {
                 name: "max payload size error".into(),
                 max_payload_size: 10,
                 queue_items: vec![device_queue::DeviceQueueItem {
-                    id: qi_id,
+                    id: qi_id.into(),
                     dev_eui: d.dev_eui,
                     f_port: 1,
                     data: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
@@ -2760,10 +2798,45 @@ mod test {
                 }),
             },
             Test {
+                name: "item has expired".into(),
+                max_payload_size: 10,
+                queue_items: vec![device_queue::DeviceQueueItem {
+                    id: qi_id.into(),
+                    dev_eui: d.dev_eui,
+                    f_port: 1,
+                    data: vec![1, 2, 3],
+                    expires_at: Some(Utc::now() - chrono::Duration::seconds(10)),
+                    ..Default::default()
+                }],
+                expected_queue_item: None,
+                expected_ack_event: None,
+                expected_log_event: Some(integration_pb::LogEvent {
+                    device_info: Some(integration_pb::DeviceInfo {
+                        tenant_id: t.id.to_string(),
+                        tenant_name: t.name.clone(),
+                        application_id: app.id.to_string(),
+                        application_name: app.name.clone(),
+                        device_profile_id: dp.id.to_string(),
+                        device_profile_name: dp.name.clone(),
+                        device_name: d.name.clone(),
+                        dev_eui: d.dev_eui.to_string(),
+                        ..Default::default()
+                    }),
+                    level: integration_pb::LogLevel::Error.into(),
+                    code: integration_pb::LogCode::Expired.into(),
+                    description: "Device queue-item discarded because it has expired".into(),
+                    context: [("queue_item_id".to_string(), qi_id.to_string())]
+                        .iter()
+                        .cloned()
+                        .collect(),
+                    ..Default::default()
+                }),
+            },
+            Test {
                 name: "is pending".into(),
                 max_payload_size: 10,
                 queue_items: vec![device_queue::DeviceQueueItem {
-                    id: qi_id,
+                    id: qi_id.into(),
                     dev_eui: d.dev_eui,
                     f_port: 1,
                     f_cnt_down: Some(10),
@@ -2795,7 +2868,7 @@ mod test {
                 name: "invalid frame-counter".into(),
                 max_payload_size: 10,
                 queue_items: vec![device_queue::DeviceQueueItem {
-                    id: qi_id,
+                    id: qi_id.into(),
                     dev_eui: d.dev_eui,
                     f_port: 1,
                     data: vec![1, 2, 3],
@@ -2836,14 +2909,14 @@ mod test {
                 name: "valid payload".into(),
                 max_payload_size: 10,
                 queue_items: vec![device_queue::DeviceQueueItem {
-                    id: qi_id,
+                    id: qi_id.into(),
                     dev_eui: d.dev_eui,
                     f_port: 1,
                     data: vec![1, 2, 3],
                     ..Default::default()
                 }],
                 expected_queue_item: Some(device_queue::DeviceQueueItem {
-                    id: qi_id,
+                    id: qi_id.into(),
                     dev_eui: d.dev_eui,
                     f_port: 1,
                     data: vec![1, 2, 3],
@@ -2869,7 +2942,7 @@ mod test {
             let d = device::partial_update(
                 d.dev_eui,
                 &device::DeviceChangeset {
-                    device_session: Some(Some(ds.clone())),
+                    device_session: Some(Some(ds.clone().into())),
                     ..Default::default()
                 },
             )
@@ -3413,11 +3486,14 @@ mod test {
                     dev_addr: Some(*dev_addr),
                     application_id: app.id,
                     device_profile_id: dp_ed.id,
-                    device_session: Some(internal::DeviceSession {
-                        dev_addr: dev_addr.to_vec(),
-                        nwk_s_enc_key: vec![0; 16],
-                        ..Default::default()
-                    }),
+                    device_session: Some(
+                        internal::DeviceSession {
+                            dev_addr: dev_addr.to_vec(),
+                            nwk_s_enc_key: vec![0; 16],
+                            ..Default::default()
+                        }
+                        .into(),
+                    ),
                     ..Default::default()
                 })
                 .await
@@ -3430,7 +3506,7 @@ mod test {
             let d_relay = device::partial_update(
                 d_relay.dev_eui,
                 &device::DeviceChangeset {
-                    device_session: Some(Some(test.device_session.clone())),
+                    device_session: Some(Some(test.device_session.clone().into())),
                     ..Default::default()
                 },
             )
@@ -3879,7 +3955,7 @@ mod test {
             let d_relay = device::partial_update(
                 d_relay.dev_eui,
                 &device::DeviceChangeset {
-                    device_session: Some(Some(test.device_session.clone())),
+                    device_session: Some(Some(test.device_session.clone().into())),
                     ..Default::default()
                 },
             )
@@ -4010,7 +4086,7 @@ mod test {
                 application: application::Application::default(),
                 device_profile: test.device_profile.clone(),
                 device: device::Device {
-                    device_session: Some(test.device_session.clone()),
+                    device_session: Some(test.device_session.clone().into()),
                     ..Default::default()
                 },
                 network_conf: config::get_region_network("eu868").unwrap(),
@@ -4121,7 +4197,7 @@ mod test {
                 application: application::Application::default(),
                 device_profile: test.device_profile.clone(),
                 device: device::Device {
-                    device_session: Some(test.device_session.clone()),
+                    device_session: Some(test.device_session.clone().into()),
                     ..Default::default()
                 },
                 network_conf: config::get_region_network("eu868").unwrap(),
@@ -4242,7 +4318,7 @@ mod test {
                 application: application::Application::default(),
                 device_profile: test.device_profile.clone(),
                 device: device::Device {
-                    device_session: Some(test.device_session.clone()),
+                    device_session: Some(test.device_session.clone().into()),
                     ..Default::default()
                 },
                 network_conf: config::get_region_network("eu868").unwrap(),
@@ -4325,7 +4401,7 @@ mod test {
                             index: 1,
                             w_f_cnt_last_request: Some(
                                 Utc::now()
-                                    .checked_sub_signed(chrono::Duration::hours(48))
+                                    .checked_sub_signed(chrono::Duration::try_hours(48).unwrap())
                                     .unwrap()
                                     .into(),
                             ),
@@ -4499,7 +4575,7 @@ mod test {
             let d_relay = device::partial_update(
                 d_relay.dev_eui,
                 &device::DeviceChangeset {
-                    device_session: Some(Some(test.device_session.clone())),
+                    device_session: Some(Some(test.device_session.clone().into())),
                     ..Default::default()
                 },
             )

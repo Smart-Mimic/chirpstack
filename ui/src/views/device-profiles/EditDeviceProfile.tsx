@@ -1,14 +1,16 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link, useParams } from "react-router-dom";
 
 import { Space, Breadcrumb, Card, Button } from "antd";
 import { PageHeader } from "@ant-design/pro-layout";
 
-import { Tenant } from "@chirpstack/chirpstack-api-grpc-web/api/tenant_pb";
-import {
+import type { Tenant } from "@chirpstack/chirpstack-api-grpc-web/api/tenant_pb";
+import type {
   DeviceProfile,
-  GetDeviceProfileRequest,
   GetDeviceProfileResponse,
+} from "@chirpstack/chirpstack-api-grpc-web/api/device_profile_pb";
+import {
+  GetDeviceProfileRequest,
   UpdateDeviceProfileRequest,
   DeleteDeviceProfileRequest,
 } from "@chirpstack/chirpstack-api-grpc-web/api/device_profile_pb";
@@ -18,6 +20,7 @@ import DeviceProfileStore from "../../stores/DeviceProfileStore";
 import SessionStore from "../../stores/SessionStore";
 import DeleteConfirm from "../../components/DeleteConfirm";
 import Admin from "../../components/Admin";
+import { useTitle } from "../helpers";
 
 interface IProps {
   tenant: Tenant;
@@ -27,10 +30,11 @@ function EditDeviceProfile(props: IProps) {
   const navigate = useNavigate();
   const [deviceProfile, setDeviceProfile] = useState<DeviceProfile | undefined>(undefined);
   const { deviceProfileId } = useParams();
+  useTitle("Tenants", props.tenant.getName(), "Device profiles", deviceProfile?.getName());
 
   useEffect(() => {
     const id = deviceProfileId!;
-    let req = new GetDeviceProfileRequest();
+    const req = new GetDeviceProfileRequest();
     req.setId(id);
 
     DeviceProfileStore.get(req, (resp: GetDeviceProfileResponse) => {
@@ -39,7 +43,7 @@ function EditDeviceProfile(props: IProps) {
   }, [deviceProfileId]);
 
   const onFinish = (obj: DeviceProfile) => {
-    let req = new UpdateDeviceProfileRequest();
+    const req = new UpdateDeviceProfileRequest();
     req.setDeviceProfile(obj);
 
     DeviceProfileStore.update(req, () => {
@@ -48,7 +52,7 @@ function EditDeviceProfile(props: IProps) {
   };
 
   const deleteDeviceProfile = () => {
-    let req = new DeleteDeviceProfileRequest();
+    const req = new DeleteDeviceProfileRequest();
     req.setId(deviceProfileId!);
 
     DeviceProfileStore.delete(req, () => {

@@ -1,27 +1,30 @@
 import { Link } from "react-router-dom";
 
 import { Space, Breadcrumb, Button } from "antd";
-import { ColumnsType } from "antd/es/table";
+import type { ColumnsType } from "antd/es/table";
 import { PageHeader } from "@ant-design/pro-layout";
 
-import {
-  ListDeviceProfilesRequest,
+import type {
   ListDeviceProfilesResponse,
   DeviceProfileListItem,
 } from "@chirpstack/chirpstack-api-grpc-web/api/device_profile_pb";
-import { Tenant } from "@chirpstack/chirpstack-api-grpc-web/api/tenant_pb";
+import { ListDeviceProfilesRequest } from "@chirpstack/chirpstack-api-grpc-web/api/device_profile_pb";
+import type { Tenant } from "@chirpstack/chirpstack-api-grpc-web/api/tenant_pb";
 import { Region } from "@chirpstack/chirpstack-api-grpc-web/common/common_pb";
 
 import { getEnumName, formatMacVersion, formatRegParamsRevision } from "../helpers";
-import DataTable, { GetPageCallbackFunc } from "../../components/DataTable";
+import type { GetPageCallbackFunc } from "../../components/DataTable";
+import DataTable from "../../components/DataTable";
 import DeviceProfileStore from "../../stores/DeviceProfileStore";
 import Admin from "../../components/Admin";
+import { useTitle } from "../helpers";
 
 interface IProps {
   tenant: Tenant;
 }
 
 function ListDeviceProfiles(props: IProps) {
+  useTitle("Tenants", props.tenant.getName(), "Device profiles");
   const columns: ColumnsType<DeviceProfileListItem.AsObject> = [
     {
       title: "Name",
@@ -100,7 +103,7 @@ function ListDeviceProfiles(props: IProps) {
   ];
 
   const getPage = (limit: number, offset: number, callbackFunc: GetPageCallbackFunc) => {
-    let req = new ListDeviceProfilesRequest();
+    const req = new ListDeviceProfilesRequest();
     req.setTenantId(props.tenant.getId());
     req.setLimit(limit);
     req.setOffset(offset);

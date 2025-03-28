@@ -1,24 +1,39 @@
-import React, { useState } from "react";
+import { useState } from "react";
 
 import { Struct } from "google-protobuf/google/protobuf/struct_pb";
+import { format } from "date-fns";
+import { Timestamp } from "google-protobuf/google/protobuf/timestamp_pb";
 
 import { Switch, notification } from "antd";
-import { Button, Tabs, Space, Card, Row, Form, Input, InputNumber, Checkbox, Popconfirm } from "antd";
-import { ColumnsType } from "antd/es/table";
+import {
+  Button,
+  Tabs,
+  Space,
+  Card,
+  Row,
+  Form,
+  Input,
+  InputNumber,
+  Popconfirm,
+  DatePicker,
+  DatePickerProps,
+} from "antd";
+import type { ColumnsType } from "antd/es/table";
 import { RedoOutlined, DeleteOutlined } from "@ant-design/icons";
 import { Buffer } from "buffer";
 
 import {
-  Device,
   EnqueueDeviceQueueItemRequest,
   GetDeviceQueueItemsRequest,
   GetDeviceQueueItemsResponse,
+  Device,
   FlushDeviceQueueRequest,
   DeviceQueueItem,
 } from "@chirpstack/chirpstack-api-grpc-web/api/device_pb";
 
 import { onFinishFailed } from "../helpers";
-import DataTable, { GetPageCallbackFunc } from "../../components/DataTable";
+import type { GetPageCallbackFunc } from "../../components/DataTable";
+import DataTable from "../../components/DataTable";
 import DeviceStore from "../../stores/DeviceStore";
 import CodeEditor from "../../components/CodeEditor";
 
@@ -26,10 +41,21 @@ interface IProps {
   device: Device;
 }
 
+interface FormRules {
+  confirmed: boolean;
+  fPort: number;
+  isEncrypted: boolean;
+  fCntDown: number;
+  hex: string;
+  base64: string;
+  json: string;
+  expiresAt?: DatePickerProps["value"];
+}
+
 function DeviceQueue(props: IProps) {
   const [refreshCounter, setRefreshCounter] = useState<number>(0);
   const [isEncrypted, setIsEncrypted] = useState<boolean>(false);
-  const [form] = Form.useForm();
+  const [form] = Form.useForm<FormRules>();
 
   const columns: ColumnsType<DeviceQueueItem.AsObject> = [
     {
@@ -104,10 +130,25 @@ function DeviceQueue(props: IProps) {
         return Buffer.from(record.data as string, "base64").toString("hex");
       },
     },
+    {
+      title: "Expires at",
+      dataIndex: "expiresAt",
+      key: "expiresAt",
+      width: 250,
+      render: (_text, record) => {
+        if (record.expiresAt !== undefined) {
+          const ts = new Date(0);
+          ts.setUTCSeconds(record.expiresAt.seconds);
+          return format(ts, "yyyy-MM-dd HH:mm:ss");
+        } else {
+          return "Never";
+        }
+      },
+    },
   ];
 
   const getPage = (limit: number, offset: number, callbackFunc: GetPageCallbackFunc) => {
-    let req = new GetDeviceQueueItemsRequest();
+    const req = new GetDeviceQueueItemsRequest();
     req.setDevEui(props.device.getDevEui());
 
     DeviceStore.getQueue(req, (resp: GetDeviceQueueItemsResponse) => {
@@ -121,22 +162,26 @@ function DeviceQueue(props: IProps) {
   };
 
   const flushQueue = () => {
-    let req = new FlushDeviceQueueRequest();
+    const req = new FlushDeviceQueueRequest();
     req.setDevEui(props.device.getDevEui());
     DeviceStore.flushQueue(req, () => {
       refreshQueue();
     });
   };
 
-  const onEnqueue = (values: any) => {
-    let req = new EnqueueDeviceQueueItemRequest();
-    let item = new DeviceQueueItem();
+  const onEnqueue = (values: FormRules) => {
+    const req = new EnqueueDeviceQueueItemRequest();
+    const item = new DeviceQueueItem();
 
     item.setDevEui(props.device.getDevEui());
     item.setFPort(values.fPort);
     item.setConfirmed(values.confirmed);
     item.setIsEncrypted(values.isEncrypted);
     item.setFCntDown(values.fCntDown);
+
+    if (values.expiresAt !== null && values.expiresAt !== undefined) {
+      item.setExpiresAt(Timestamp.fromDate(values.expiresAt.toDate()));
+    }
 
     if (values.hex !== undefined) {
       item.setData(new Uint8Array(Buffer.from(values.hex, "hex")));
@@ -149,7 +194,7 @@ function DeviceQueue(props: IProps) {
     if (values.json !== undefined) {
       try {
         const obj = JSON.parse(values.json);
-        let struct = Struct.fromJavaScript(obj);
+        const struct = Struct.fromJavaScript(obj);
 
         item.setObject(struct);
       } catch (err) {
@@ -175,7 +220,13 @@ function DeviceQueue(props: IProps) {
   return (
     <Space direction="vertical" style={{ width: "100%" }} size="large">
       <Card title="Enqueue">
-        <Form layout="horizontal" onFinish={onEnqueue} onFinishFailed={onFinishFailed} form={form} initialValues={{ fPort: 1 }}>
+        <Form
+          layout="horizontal"
+          onFinish={onEnqueue}
+          onFinishFailed={onFinishFailed}
+          form={form}
+          initialValues={{ fPort: 1 }}
+        >
           <Row>
             <Space direction="horizontal" style={{ width: "100%" }} size="large">
               <Form.Item name="confirmed" label="Confirmed" valuePropName="checked">
@@ -192,13 +243,22 @@ function DeviceQueue(props: IProps) {
               >
                 <Switch onChange={setIsEncrypted} />
               </Form.Item>
-              {isEncrypted && (<Form.Item
-                name="fCntDown"
-                label="Downlink frame-counter used for encryption"
-                rules={[{ required: true, message: "Please enter a downlink frame-counter!" }]}
+              {isEncrypted && (
+                <Form.Item
+                  name="fCntDown"
+                  label="Downlink frame-counter used for encryption"
+                  rules={[{ required: true, message: "Please enter a downlink frame-counter!" }]}
+                >
+                  <InputNumber min={0} />
+                </Form.Item>
+              )}
+              <Form.Item
+                name="expiresAt"
+                label="Expires at"
+                tooltip="If set, the queue-item will automatically expire at the given timestamp if it wasn't sent yet."
               >
-                <InputNumber min={0} />
-              </Form.Item>)}
+                <DatePicker showTime />
+              </Form.Item>
             </Space>
           </Row>
           <Tabs defaultActiveKey="1">

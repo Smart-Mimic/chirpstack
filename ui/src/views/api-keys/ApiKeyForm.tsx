@@ -11,13 +11,18 @@ interface IProps {
 
 function ApiKeyForm(props: IProps) {
   const onFinish = (values: ApiKey.AsObject) => {
-    let apiKey = new ApiKey();
+    const apiKey = new ApiKey();
     apiKey.setName(values.name);
     props.onFinish(apiKey);
   };
 
   return (
-    <Form layout="vertical" initialValues={props.initialValues.toObject()} onFinish={onFinish} onFinishFailed={onFinishFailed}>
+    <Form
+      layout="vertical"
+      initialValues={props.initialValues.toObject()}
+      onFinish={onFinish}
+      onFinishFailed={onFinishFailed}
+    >
       <Form.Item label="Name" name="name" rules={[{ required: true, message: "Please enter a name!" }]}>
         <Input />
       </Form.Item>

@@ -200,12 +200,13 @@ impl Data {
             session_id: sess_id.as_bytes().to_vec(),
             net_id: net_id.to_vec(),
             dev_addr: self.mac_payload.fhdr.devaddr.to_vec(),
+            validate_mic: roaming::get_passive_roaming_validate_mic(net_id)?,
             lifetime: {
                 let lt = pr_start_ans.lifetime.unwrap_or_default() as i64;
                 if lt == 0 {
                     None
                 } else {
-                    Some((Utc::now() + Duration::seconds(lt)).into())
+                    Some((Utc::now() + Duration::try_seconds(lt).unwrap_or_default()).into())
                 }
             },
             f_nwk_s_int_key: match &pr_start_ans.f_nwk_s_int_key {

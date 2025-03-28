@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::time::SystemTime;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use rquickjs::IntoJs;
+use rquickjs::{CatchResultExt, IntoJs};
 
 use super::convert;
 use crate::config;
@@ -50,32 +50,39 @@ pub async fn decode(
     let out = ctx.with(|ctx| -> Result<pbjson_types::Struct> {
         // We need to export the Buffer class, as eval / eval_with_options
         // does not allow using import statement.
-        let buff: rquickjs::Module = ctx.compile(
+        let buff = rquickjs::Module::declare(
+            ctx.clone(),
             "b",
             r#"
             import { Buffer } from "buffer";
             export { Buffer }
             "#,
-        )?;
+        )
+        .context("Declare script")?;
+        let (buff, buff_promise) = buff
+            .eval()
+            .catch(&ctx)
+            .map_err(|e| anyhow!("JS error: {}", e))?;
+        () = buff_promise.finish()?;
         let buff: rquickjs::Function = buff.get("Buffer")?;
 
-        let input = rquickjs::Object::new(ctx)?;
-        input.set("bytes", b.into_js(ctx)?)?;
-        input.set("fPort", f_port.into_js(ctx)?)?;
-        input.set("recvTime", recv_time.into_js(ctx)?)?;
-        input.set("variables", variables.into_js(ctx)?)?;
+        let input = rquickjs::Object::new(ctx.clone())?;
+        input.set("bytes", b.into_js(&ctx)?)?;
+        input.set("fPort", f_port.into_js(&ctx)?)?;
+        input.set("recvTime", recv_time.into_js(&ctx)?)?;
+        input.set("variables", variables.into_js(&ctx)?)?;
 
         let globals = ctx.globals();
         globals.set("chirpstack_input", input)?;
         globals.set("Buffer", buff)?;
 
-        let res: rquickjs::Object = ctx.eval_with_options(
-            script,
-            rquickjs::context::EvalOptions {
-                strict: false,
-                ..Default::default()
-            },
-        )?;
+        let mut eval_options = rquickjs::context::EvalOptions::default();
+        eval_options.strict = false;
+
+        let res: rquickjs::Object = ctx
+            .eval_with_options(script, eval_options)
+            .catch(&ctx)
+            .map_err(|e| anyhow!("JS error: {}", e))?;
 
         let errors: Result<Vec<String>, rquickjs::Error> = res.get("errors");
         if let Ok(errors) = errors {
@@ -134,31 +141,38 @@ pub async fn encode(
     ctx.with(|ctx| {
         // We need to export the Buffer class, as eval / eval_with_options
         // does not allow using import statement.
-        let buff: rquickjs::Module = ctx.compile(
+        let buff = rquickjs::Module::declare(
+            ctx.clone(),
             "b",
             r#"
             import { Buffer } from "buffer";
             export { Buffer }
             "#,
-        )?;
+        )
+        .context("Declare script")?;
+        let (buff, buff_promise) = buff
+            .eval()
+            .catch(&ctx)
+            .map_err(|e| anyhow!("JS error: {}", e))?;
+        () = buff_promise.finish()?;
         let buff: rquickjs::Function = buff.get("Buffer")?;
 
-        let input = rquickjs::Object::new(ctx)?;
-        input.set("fPort", f_port.into_js(ctx)?)?;
-        input.set("variables", variables.into_js(ctx)?)?;
-        input.set("data", convert::struct_to_rquickjs(ctx, s))?;
+        let input = rquickjs::Object::new(ctx.clone())?;
+        input.set("fPort", f_port.into_js(&ctx)?)?;
+        input.set("variables", variables.into_js(&ctx)?)?;
+        input.set("data", convert::struct_to_rquickjs(&ctx, s))?;
 
         let globals = ctx.globals();
         globals.set("chirpstack_input", input)?;
         globals.set("Buffer", buff)?;
 
-        let res: rquickjs::Object = ctx.eval_with_options(
-            script,
-            rquickjs::context::EvalOptions {
-                strict: false,
-                ..Default::default()
-            },
-        )?;
+        let mut eval_options = rquickjs::context::EvalOptions::default();
+        eval_options.strict = false;
+
+        let res: rquickjs::Object = ctx
+            .eval_with_options(script, eval_options)
+            .catch(&ctx)
+            .map_err(|e| anyhow!("JS error: {}", e))?;
 
         let errors: Result<Vec<String>, rquickjs::Error> = res.get("errors");
         if let Ok(errors) = errors {
@@ -198,6 +212,24 @@ pub mod test {
         let vars: HashMap<String, String> = HashMap::new();
         let out = decode(Utc::now(), 10, &vars, &decoder, &[0x01, 0x02, 0x03]).await;
         assert!(out.is_err());
+    }
+
+    #[tokio::test]
+    pub async fn test_decode_error() {
+        let decoder = r#"
+            function decodeUplink(input) {
+                return foo;
+            }
+        "#
+        .to_string();
+
+        let vars: HashMap<String, String> = HashMap::new();
+        let out = decode(Utc::now(), 10, &vars, &decoder, &[0x01, 0x02, 0x03]).await;
+
+        assert_eq!(
+            "JS error: Error: foo is not defined\n    at decodeUplink (eval_script:3:1)\n    at <eval> (eval_script:8:9)\n",
+            out.err().unwrap().to_string()
+        );
     }
 
     #[tokio::test]
@@ -318,6 +350,25 @@ pub mod test {
 
         let out = encode(10, &vars, &encoder, &input).await;
         assert!(out.is_err());
+    }
+
+    #[tokio::test]
+    pub async fn test_encode_error() {
+        let encoder = r#"
+            function encodeDownlink(input) {
+                return foo;
+            }
+        "#
+        .to_string();
+
+        let vars: HashMap<String, String> = HashMap::new();
+
+        let input = prost_types::Struct {
+            ..Default::default()
+        };
+
+        let out = encode(10, &vars, &encoder, &input).await;
+        assert_eq!("JS error: Error: foo is not defined\n    at encodeDownlink (eval_script:3:1)\n    at <eval> (eval_script:8:9)\n", out.err().unwrap().to_string());
     }
 
     #[tokio::test]

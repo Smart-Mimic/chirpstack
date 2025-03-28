@@ -13,7 +13,7 @@ interface IProps {
 function HttpIntegrationForm(props: IProps) {
   const onFinish = (values: HttpIntegration.AsObject) => {
     const v = Object.assign(props.initialValues.toObject(), values);
-    let i = new HttpIntegration();
+    const i = new HttpIntegration();
 
     i.setApplicationId(v.applicationId);
     i.setEncoding(v.encoding);
@@ -28,7 +28,12 @@ function HttpIntegrationForm(props: IProps) {
   };
 
   return (
-    <Form layout="vertical" initialValues={props.initialValues.toObject()} onFinish={onFinish} onFinishFailed={onFinishFailed}>
+    <Form
+      layout="vertical"
+      initialValues={props.initialValues.toObject()}
+      onFinish={onFinish}
+      onFinishFailed={onFinishFailed}
+    >
       <Form.Item
         label="Payload encoding"
         name="encoding"

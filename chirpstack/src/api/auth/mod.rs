@@ -6,7 +6,7 @@ pub mod claims;
 pub mod error;
 pub mod validator;
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum AuthID {
     None,
     User(Uuid),
@@ -35,7 +35,7 @@ pub fn auth_interceptor(mut req: Request<()>) -> Result<Request<()>, Status> {
         Some(v) => v,
         None => {
             return Err(Status::unauthenticated(
-                "authorization metadata must in format 'Bearer <TOKEN>",
+                "authorization metadata must be in format 'Bearer <TOKEN>",
             ));
         }
     };

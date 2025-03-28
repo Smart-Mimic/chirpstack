@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Form, Input, Switch, Row, Col, Button } from "antd";
 
 import { TenantUser } from "@chirpstack/chirpstack-api-grpc-web/api/tenant_pb";
@@ -22,7 +22,7 @@ function TenantUserForm(props: IProps) {
   const onFinish = (values: TenantUser.AsObject) => {
     const v = Object.assign(props.initialValues.toObject(), values);
 
-    let tu = new TenantUser();
+    const tu = new TenantUser();
     tu.setEmail(v.email);
     tu.setIsAdmin(v.isAdmin);
     tu.setIsGatewayAdmin(v.isGatewayAdmin);
@@ -38,7 +38,12 @@ function TenantUserForm(props: IProps) {
   };
 
   return (
-    <Form layout="vertical" initialValues={props.initialValues.toObject()} onFinish={onFinish} onFinishFailed={onFinishFailed}>
+    <Form
+      layout="vertical"
+      initialValues={props.initialValues.toObject()}
+      onFinish={onFinish}
+      onFinishFailed={onFinishFailed}
+    >
       <Form.Item
         label="Email (of existing user)"
         tooltip="An user without additional permissions will be able to see all resources under this tenant and will be able to send and receive device payloads."

@@ -5,18 +5,28 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
+use axum::{
+    body::Bytes,
+    response::{IntoResponse, Json, Response},
+    Router,
+};
 use chrono::Utc;
+use http::StatusCode;
 use redis::streams::StreamReadReply;
+use rustls::{
+    server::{NoClientAuth, WebPkiClientVerifier},
+    ServerConfig,
+};
 use serde::Serialize;
 use tokio::sync::oneshot;
 use tokio::task;
 use tracing::{error, info, span, warn, Instrument, Level};
 use uuid::Uuid;
-use warp::{http::StatusCode, Filter, Reply};
 
 use crate::backend::{joinserver, keywrap, roaming};
 use crate::downlink::data_fns;
 use crate::helpers::errors::PrintFullError;
+use crate::helpers::tls::{get_root_certs, load_cert, load_key};
 use crate::storage::{
     device, error::Error as StorageError, get_async_redis_conn, passive_roaming, redis_key,
 };
@@ -39,47 +49,47 @@ pub async fn setup() -> Result<()> {
     let addr: SocketAddr = conf.backend_interfaces.bind.parse()?;
     info!(bind = %conf.backend_interfaces.bind, "Setting up backend interfaces API");
 
-    let routes = warp::post()
-        .and(warp::body::content_length_limit(1024 * 16))
-        .and(warp::body::aggregate())
-        .then(handle_request);
+    let app = Router::new().fallback(handle_request);
 
     if !conf.backend_interfaces.ca_cert.is_empty()
         || !conf.backend_interfaces.tls_cert.is_empty()
         || !conf.backend_interfaces.tls_key.is_empty()
     {
-        let mut w = warp::serve(routes).tls();
-        if !conf.backend_interfaces.ca_cert.is_empty() {
-            w = w.client_auth_required_path(&conf.backend_interfaces.ca_cert);
-        }
-        if !conf.backend_interfaces.tls_cert.is_empty() {
-            w = w.cert_path(&conf.backend_interfaces.tls_cert);
-        }
-        if !conf.backend_interfaces.tls_key.is_empty() {
-            w = w.key_path(&conf.backend_interfaces.tls_key);
-        }
-        w.run(addr).await;
+        let mut server_config = ServerConfig::builder()
+            .with_client_cert_verifier(if conf.backend_interfaces.ca_cert.is_empty() {
+                Arc::new(NoClientAuth)
+            } else {
+                let root_certs = get_root_certs(Some(conf.backend_interfaces.ca_cert.clone()))?;
+                WebPkiClientVerifier::builder(root_certs.into()).build()?
+            })
+            .with_single_cert(
+                load_cert(&conf.backend_interfaces.tls_cert).await?,
+                load_key(&conf.backend_interfaces.tls_key).await?,
+            )?;
+        server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+
+        axum_server::bind_rustls(
+            addr,
+            axum_server::tls_rustls::RustlsConfig::from_config(Arc::new(server_config)),
+        )
+        .serve(app.into_make_service())
+        .await?;
     } else {
-        warp::serve(routes).run(addr).await;
+        axum_server::bind(addr)
+            .serve(app.into_make_service())
+            .await?;
     }
 
     Ok(())
 }
 
-pub async fn handle_request(mut body: impl warp::Buf) -> http::Response<hyper::Body> {
-    let mut b: Vec<u8> = vec![];
-
-    while body.has_remaining() {
-        b.extend_from_slice(body.chunk());
-        let cnt = body.chunk().len();
-        body.advance(cnt);
-    }
+pub async fn handle_request(b: Bytes) -> Response {
+    let b: Vec<u8> = b.into();
 
     let bp: BasePayload = match serde_json::from_slice(&b) {
         Ok(v) => v,
         Err(e) => {
-            return warp::reply::with_status(e.to_string(), StatusCode::BAD_REQUEST)
-                .into_response();
+            return (StatusCode::BAD_REQUEST, e.to_string()).into_response();
         }
     };
 
@@ -87,7 +97,7 @@ pub async fn handle_request(mut body: impl warp::Buf) -> http::Response<hyper::B
     _handle_request(bp, b).instrument(span).await
 }
 
-pub async fn _handle_request(bp: BasePayload, b: Vec<u8>) -> http::Response<hyper::Body> {
+pub async fn _handle_request(bp: BasePayload, b: Vec<u8>) -> Response {
     info!("Request received");
 
     let sender_client = {
@@ -100,7 +110,7 @@ pub async fn _handle_request(bp: BasePayload, b: Vec<u8>) -> http::Response<hype
                     let msg = format!("Error decoding SenderID: {}", e);
                     let pl = bp.to_base_payload_result(backend::ResultCode::MalformedRequest, &msg);
                     log_request_response(&bp, &b, &pl).await;
-                    return warp::reply::json(&pl).into_response();
+                    return Json(&pl).into_response();
                 }
             };
 
@@ -111,7 +121,7 @@ pub async fn _handle_request(bp: BasePayload, b: Vec<u8>) -> http::Response<hype
                     let msg = format!("Unknown SenderID: {}", sender_id);
                     let pl = bp.to_base_payload_result(backend::ResultCode::UnknownSender, &msg);
                     log_request_response(&bp, &b, &pl).await;
-                    return warp::reply::json(&pl).into_response();
+                    return Json(&pl).into_response();
                 }
             }
         } else if bp.sender_id.len() == 3 {
@@ -123,7 +133,7 @@ pub async fn _handle_request(bp: BasePayload, b: Vec<u8>) -> http::Response<hype
                     let msg = format!("Error decoding SenderID: {}", e);
                     let pl = bp.to_base_payload_result(backend::ResultCode::MalformedRequest, &msg);
                     log_request_response(&bp, &b, &pl).await;
-                    return warp::reply::json(&pl).into_response();
+                    return Json(&pl).into_response();
                 }
             };
 
@@ -134,7 +144,7 @@ pub async fn _handle_request(bp: BasePayload, b: Vec<u8>) -> http::Response<hype
                     let msg = format!("Unknown SenderID: {}", sender_id);
                     let pl = bp.to_base_payload_result(backend::ResultCode::UnknownSender, &msg);
                     log_request_response(&bp, &b, &pl).await;
-                    return warp::reply::json(&pl).into_response();
+                    return Json(&pl).into_response();
                 }
             }
         } else {
@@ -145,7 +155,7 @@ pub async fn _handle_request(bp: BasePayload, b: Vec<u8>) -> http::Response<hype
                 "Invalid SenderID length",
             );
             log_request_response(&bp, &b, &pl).await;
-            return warp::reply::json(&pl).into_response();
+            return Json(&pl).into_response();
         }
     };
 
@@ -156,19 +166,20 @@ pub async fn _handle_request(bp: BasePayload, b: Vec<u8>) -> http::Response<hype
                 error!(error = %e.full(), "Handle async answer error");
             }
         });
-        return warp::reply::with_status("", StatusCode::OK).into_response();
+        return (StatusCode::OK, "").into_response();
     }
 
     match bp.message_type {
         MessageType::PRStartReq => handle_pr_start_req(sender_client, bp, &b).await,
         MessageType::PRStopReq => handle_pr_stop_req(sender_client, bp, &b).await,
         MessageType::XmitDataReq => handle_xmit_data_req(sender_client, bp, &b).await,
+        MessageType::HomeNSReq => handle_home_ns_req(sender_client, bp, &b).await,
         // Unknown message
-        _ => warp::reply::with_status(
-            "Handler for {:?} is not implemented",
+        _ => (
             StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Handler for {:?} is not implemented", bp.message_type),
         )
-        .into_response(),
+            .into_response(),
     }
 }
 
@@ -200,7 +211,7 @@ async fn handle_pr_start_req(
     sender_client: Arc<backend::Client>,
     bp: backend::BasePayload,
     b: &[u8],
-) -> http::Response<hyper::Body> {
+) -> Response {
     if sender_client.is_async() {
         let b = b.to_vec();
         task::spawn(async move {
@@ -221,18 +232,17 @@ async fn handle_pr_start_req(
                 error!(error = %e.full(), transaction_id = bp.transaction_id, "Send async PRStartAns error");
             }
         });
-
-        warp::reply::with_status("", StatusCode::OK).into_response()
+        (StatusCode::OK, "").into_response()
     } else {
         match _handle_pr_start_req(b).await {
             Ok(ans) => {
                 log_request_response(&bp, b, &ans).await;
-                warp::reply::json(&ans).into_response()
+                Json(&ans).into_response()
             }
             Err(e) => {
                 let ans = err_to_response(e, &bp);
                 log_request_response(&bp, b, &ans).await;
-                warp::reply::json(&ans).into_response()
+                Json(&ans).into_response()
             }
         }
     }
@@ -292,6 +302,7 @@ async fn _handle_pr_start_req_data(
     let region_common_name = CommonName::from_str(&pl.ul_meta_data.rf_region)?;
     let region_config_id = region::get_region_config_id(region_common_name)?;
     let dr = pl.ul_meta_data.data_rate.unwrap_or_default();
+    let validate_mic = roaming::get_passive_roaming_validate_mic(sender_id)?;
 
     let mut ufs = UplinkFrameSet {
         uplink_set_id: Uuid::new_v4(),
@@ -317,7 +328,8 @@ async fn _handle_pr_start_req_data(
     let kek_label = roaming::get_passive_roaming_kek_label(sender_id)?;
     let ds = d.get_device_session()?;
 
-    let nwk_s_key = if ds.mac_version().to_string().starts_with("1.0") {
+    // Only in case validate_mic=true and LoRaWAN=1.0.x.
+    let nwk_s_key = if validate_mic && ds.mac_version().to_string().starts_with("1.0") {
         Some(keywrap::wrap(
             &kek_label,
             AES128Key::from_slice(&ds.nwk_s_enc_key)?,
@@ -326,13 +338,14 @@ async fn _handle_pr_start_req_data(
         None
     };
 
-    let f_nwk_s_int_key = if ds.mac_version().to_string().starts_with("1.0") {
-        None
-    } else {
+    // Only in case validate_mic=true and LoRaWAN=1.1.x.
+    let f_nwk_s_int_key = if validate_mic && ds.mac_version().to_string().starts_with("1.1") {
         Some(keywrap::wrap(
             &kek_label,
             AES128Key::from_slice(&ds.f_nwk_s_int_key)?,
         )?)
+    } else {
+        None
     };
 
     // In case of stateless, the payload is directly handled
@@ -361,7 +374,7 @@ async fn handle_pr_stop_req(
     sender_client: Arc<backend::Client>,
     bp: backend::BasePayload,
     b: &[u8],
-) -> http::Response<hyper::Body> {
+) -> Response {
     if sender_client.is_async() {
         let b = b.to_vec();
         task::spawn(async move {
@@ -381,18 +394,17 @@ async fn handle_pr_stop_req(
                 error!(error = %e.full(), "Send async PRStopAns error");
             }
         });
-
-        warp::reply::with_status("", StatusCode::OK).into_response()
+        (StatusCode::OK, "").into_response()
     } else {
         match _handle_pr_stop_req(b).await {
             Ok(ans) => {
                 log_request_response(&bp, b, &ans).await;
-                warp::reply::json(&ans).into_response()
+                Json(&ans).into_response()
             }
             Err(e) => {
                 let ans = err_to_response(e, &bp);
                 log_request_response(&bp, b, &ans).await;
-                warp::reply::json(&ans).into_response()
+                Json(&ans).into_response()
             }
         }
     }
@@ -428,13 +440,13 @@ async fn handle_xmit_data_req(
     sender_client: Arc<backend::Client>,
     bp: backend::BasePayload,
     b: &[u8],
-) -> http::Response<hyper::Body> {
+) -> Response {
     let pl: backend::XmitDataReqPayload = match serde_json::from_slice(b) {
         Ok(v) => v,
         Err(e) => {
             let ans = err_to_response(anyhow::Error::new(e), &bp);
             log_request_response(&bp, b, &ans).await;
-            return warp::reply::json(&ans).into_response();
+            return Json(&ans).into_response();
         }
     };
 
@@ -463,18 +475,17 @@ async fn handle_xmit_data_req(
                 error!(error = %e.full(), "Send async XmitDataAns error");
             }
         });
-
-        warp::reply::with_status("", StatusCode::OK).into_response()
+        (StatusCode::OK, "").into_response()
     } else {
         match _handle_xmit_data_req(pl).await {
             Ok(ans) => {
                 log_request_response(&bp, b, &ans).await;
-                warp::reply::json(&ans).into_response()
+                Json(&ans).into_response()
             }
             Err(e) => {
                 let ans = err_to_response(e, &bp);
                 log_request_response(&bp, b, &ans).await;
-                warp::reply::json(&ans).into_response()
+                Json(&ans).into_response()
             }
         }
     }
@@ -523,12 +534,74 @@ async fn _handle_xmit_data_req(
     })
 }
 
-async fn handle_async_ans(bp: &BasePayload, b: &[u8]) -> Result<http::Response<hyper::Body>> {
+async fn handle_home_ns_req(
+    sender_client: Arc<backend::Client>,
+    bp: backend::BasePayload,
+    b: &[u8],
+) -> Response {
+    let pl: backend::HomeNSReqPayload = match serde_json::from_slice(b) {
+        Ok(v) => v,
+        Err(e) => {
+            let ans = err_to_response(anyhow::Error::new(e), &bp);
+            log_request_response(&bp, b, &ans).await;
+            return Json(&ans).into_response();
+        }
+    };
+
+    if sender_client.is_async() {
+        let b = b.to_vec();
+        task::spawn(async move {
+            let ans = match _handle_home_ns_req(pl).await {
+                Ok(v) => v,
+                Err(e) => {
+                    let msg = e.to_string();
+                    backend::HomeNSAnsPayload {
+                        base: bp.to_base_payload_result(err_to_result_code(e), &msg),
+                        h_net_id: Vec::new(),
+                    }
+                }
+            };
+
+            log_request_response(&bp, &b, &ans).await;
+
+            if let Err(e) = sender_client.home_ns_ans(backend::Role::FNS, &ans).await {
+                error!(error = %e.full(), "Send async HomeNSAns error");
+            }
+        });
+
+        (StatusCode::OK, "").into_response()
+    } else {
+        match _handle_home_ns_req(pl).await {
+            Ok(ans) => {
+                log_request_response(&bp, b, &ans).await;
+                Json(&ans).into_response()
+            }
+            Err(e) => {
+                let ans = err_to_response(e, &bp);
+                log_request_response(&bp, b, &ans).await;
+                Json(&ans).into_response()
+            }
+        }
+    }
+}
+
+async fn _handle_home_ns_req(pl: backend::HomeNSReqPayload) -> Result<backend::HomeNSAnsPayload> {
+    let conf = config::get();
+
+    Ok(backend::HomeNSAnsPayload {
+        base: pl
+            .base
+            .to_base_payload_result(backend::ResultCode::Success, ""),
+        h_net_id: conf.network.net_id.to_vec(),
+    })
+}
+
+async fn handle_async_ans(bp: &BasePayload, b: &[u8]) -> Result<Response> {
     let transaction_id = bp.transaction_id;
 
     let key = redis_key(format!("backend:async:{}", transaction_id));
 
-    redis::pipe()
+    () = redis::pipe()
         .atomic()
         .cmd("XADD")
         .arg(&key)
@@ -545,7 +618,7 @@ async fn handle_async_ans(bp: &BasePayload, b: &[u8]) -> Result<http::Response<h
         .query_async(&mut get_async_redis_conn().await?)
         .await?;
 
-    Ok(warp::reply().into_response())
+    Ok((StatusCode::OK, "").into_response())
 }
 
 pub async fn get_async_receiver(
@@ -587,7 +660,7 @@ pub async fn get_async_receiver(
                 for (k, v) in &stream_id.map {
                     match k.as_ref() {
                         "pl" => {
-                            if let redis::Value::Data(b) = v {
+                            if let redis::Value::BulkString(b) = v {
                                 let _ = tx.send(b.to_vec());
                                 return;
                             }

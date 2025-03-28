@@ -1,10 +1,11 @@
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use base64::{engine::general_purpose, Engine as _};
-use gcp_auth::{AuthenticationManager, CustomServiceAccount};
+use gcp_auth::{CustomServiceAccount, TokenProvider};
 use prost::Message;
 use reqwest::header::{HeaderMap, AUTHORIZATION, CONTENT_TYPE};
 use reqwest::Client;
@@ -16,12 +17,24 @@ use crate::storage::application::GcpPubSubConfiguration;
 use chirpstack_api::api::Encoding;
 use chirpstack_api::integration;
 
+static CLIENT: OnceLock<Client> = OnceLock::new();
+
+fn get_client() -> Client {
+    CLIENT
+        .get_or_init(|| {
+            Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap()
+        })
+        .clone()
+}
+
 pub struct Integration {
     json: bool,
     project_id: String,
     topic_name: String,
-    auth_manager: gcp_auth::AuthenticationManager,
-    timeout: Duration,
+    service_account: gcp_auth::CustomServiceAccount,
 }
 
 #[derive(Serialize)]
@@ -46,7 +59,6 @@ impl Integration {
     pub async fn new(conf: &GcpPubSubConfiguration) -> Result<Integration> {
         trace!("Initializing GCP Pub-Sub integration");
         let service_account = CustomServiceAccount::from_json(&conf.credentials_file)?;
-        let auth_manager = AuthenticationManager::from(service_account);
 
         Ok(Integration {
             json: match Encoding::try_from(conf.encoding)
@@ -57,8 +69,7 @@ impl Integration {
             },
             project_id: conf.project_id.clone(),
             topic_name: conf.topic_name.clone(),
-            auth_manager,
-            timeout: Duration::from_secs(5),
+            service_account,
         })
     }
 
@@ -89,12 +100,11 @@ impl Integration {
         let pl = serde_json::to_string(&pl)?;
 
         let token = self
-            .auth_manager
-            .get_token(&["https://www.googleapis.com/auth/pubsub"])
+            .service_account
+            .token(&["https://www.googleapis.com/auth/pubsub"])
             .await
             .context("Get GCP bearer token")?;
 
-        let client = Client::builder().timeout(self.timeout).build()?;
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
         headers.insert(
@@ -102,7 +112,7 @@ impl Integration {
             format!("Bearer {}", token.as_str()).parse().unwrap(),
         );
 
-        let res = client
+        let res = get_client()
             .post(format!(
                 "https://pubsub.googleapis.com/v1/{}:publish",
                 topic

@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { Row, Col, Card } from "antd";
 import { Form, Input, Button } from "antd";
 
-import { SettingsResponse, OpenIdConnectLoginRequest, OAuth2LoginRequest } from "@chirpstack/chirpstack-api-grpc-web/api/internal_pb";
+import type { SettingsResponse } from "@chirpstack/chirpstack-api-grpc-web/api/internal_pb";
+import { OpenIdConnectLoginRequest, OAuth2LoginRequest } from "@chirpstack/chirpstack-api-grpc-web/api/internal_pb";
 
 import SessionStore from "../../stores/SessionStore";
 import InternalStore from "../../stores/InternalStore";
+import { useTitle } from "../helpers";
 
 const layout = {
   labelCol: {
@@ -53,7 +55,6 @@ function OidcLogin({ loginUrl, loginLabel }: OidcLoginProps) {
     </Row>
   );
 }
-
 
 function OAuth2Login({ loginUrl, loginLabel }: OAuth2LoginProps) {
   return (
@@ -122,6 +123,7 @@ function LoginForm() {
 }
 
 function Login() {
+  useTitle("Login");
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -134,7 +136,7 @@ function Login() {
   const [oAuth2LoginUrl, setOAuth2LoginUrl] = useState<string>("");
 
   useEffect(() => {
-    SessionStore.logout(true, () => { });
+    SessionStore.logout(true, () => {});
 
     InternalStore.settings((resp: SettingsResponse) => {
       const oidc = resp.getOpenidConnect()!;
@@ -150,10 +152,10 @@ function Login() {
 
       if (location.search !== "") {
         // Callback from OIDC or OAuth2 provider.
-        let q = new URLSearchParams(location.search);
+        const q = new URLSearchParams(location.search);
 
         if (oidc.getEnabled()) {
-          let req = new OpenIdConnectLoginRequest();
+          const req = new OpenIdConnectLoginRequest();
           req.setCode(q.get("code") || "");
           req.setState(q.get("state") || "");
 
@@ -161,7 +163,7 @@ function Login() {
             navigate("/");
           });
         } else if (oAuth2.getEnabled()) {
-          let req = new OAuth2LoginRequest();
+          const req = new OAuth2LoginRequest();
           req.setCode(q.get("code") || "");
           req.setState(q.get("state") || "");
 

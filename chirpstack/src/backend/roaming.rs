@@ -155,6 +155,25 @@ pub fn get_passive_roaming_kek_label(net_id: NetID) -> Result<String> {
     ))
 }
 
+pub fn get_passive_roaming_validate_mic(net_id: NetID) -> Result<bool> {
+    let conf = config::get();
+
+    for s in &conf.roaming.servers {
+        if s.net_id == net_id {
+            return Ok(s.passive_roaming_validate_mic);
+        }
+    }
+
+    if conf.roaming.default.enabled {
+        return Ok(conf.roaming.default.passive_roaming_validate_mic);
+    }
+
+    Err(anyhow!(
+        "Passive-roaming mic-check for net_id {} does not exist",
+        net_id
+    ))
+}
+
 pub fn is_enabled() -> bool {
     let conf = config::get();
     conf.roaming.default.enabled || !conf.roaming.servers.is_empty()
@@ -249,7 +268,7 @@ pub fn ul_meta_data_to_rx_info(ul_meta_data: &ULMetaData) -> Result<Vec<gw::Upli
             fine_time_since_gps_epoch: if gw_info.fine_recv_time.is_some() {
                 let ts = ul_meta_data
                     .recv_time
-                    .duration_round(Duration::seconds(1))?;
+                    .duration_round(Duration::try_seconds(1).unwrap())?;
                 let ts = ts + Duration::nanoseconds(gw_info.fine_recv_time.unwrap() as i64);
 
                 Some(ts.to_gps_time().to_std()?.into())

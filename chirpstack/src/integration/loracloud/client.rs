@@ -1,4 +1,5 @@
 use std::fmt;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -13,6 +14,19 @@ use crate::gpstime::ToGpsTime;
 use crate::uplink::helpers;
 use lrwn::EUI64;
 
+static CLIENT: OnceLock<Client> = OnceLock::new();
+
+fn get_client() -> Client {
+    CLIENT
+        .get_or_init(|| {
+            Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap()
+        })
+        .clone()
+}
+
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("No location")]
@@ -25,7 +39,6 @@ pub enum Error {
 pub struct ApiClient {
     uri: String,
     token: String,
-    timeout: Duration,
 }
 
 impl ApiClient {
@@ -33,7 +46,6 @@ impl ApiClient {
         ApiClient {
             uri: uri.to_string(),
             token: token.to_string(),
-            timeout: Duration::from_secs(5),
         }
     }
 
@@ -117,7 +129,6 @@ impl ApiClient {
 
     pub async fn uplink_send(&self, req: &UplinkRequest) -> Result<UplinkResponse> {
         let endpoint = format!("{}/api/v1/device/send", self.uri);
-        let client = Client::builder().timeout(self.timeout).build()?;
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
         headers.insert(
@@ -125,7 +136,7 @@ impl ApiClient {
             self.token.parse()?,
         );
 
-        let res = client
+        let res = get_client()
             .post(endpoint)
             .headers(headers)
             .json(req)
@@ -138,7 +149,6 @@ impl ApiClient {
 
     async fn request(&self, endpoint: &str, body: &str) -> Result<Response> {
         let endpoint = format!("{}{}", self.uri, endpoint);
-        let client = Client::builder().timeout(self.timeout).build()?;
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
         headers.insert(
@@ -146,7 +156,7 @@ impl ApiClient {
             self.token.parse()?,
         );
 
-        let res = client
+        let res = get_client()
             .post(endpoint)
             .body(body.to_string())
             .headers(headers)
@@ -160,7 +170,6 @@ impl ApiClient {
 
     async fn v3_request(&self, endpoint: &str, body: &str) -> Result<V3Response> {
         let endpoint = format!("{}{}", self.uri, endpoint);
-        let client = Client::builder().timeout(self.timeout).build()?;
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
         headers.insert(
@@ -168,7 +177,7 @@ impl ApiClient {
             self.token.parse()?,
         );
 
-        let res = client
+        let res = get_client()
             .post(endpoint)
             .body(body.to_string())
             .headers(headers)
@@ -375,25 +384,13 @@ pub struct LocationResult {
     pub latitude: f64,
     pub longitude: f64,
     pub altitude: f64,
-    pub accuracy: Option<f64>, // documented as INT, but JSON does (sometimes) contain x.y value. Also, this value can be null.
-    #[serde(rename = "algorithmType")]
-    pub algorithm_type: String,
-    #[serde(rename = "numberOfGatewaysReceived")]
-    pub number_of_gateways_received: f64, // documented as INT, but JSON does (sometimes) contain x.y value.
-    #[serde(rename = "numberOfGatewaysUsed")]
-    pub number_of_gateways_used: f64, // documented as INT, but JSON does (sometimes) contain x.y value.
+    pub accuracy: Option<f64>,
 }
 
 #[derive(Deserialize, Clone)]
 pub struct LocationSolverResult {
-    pub ecef: Vec<f64>,
     pub llh: Vec<f64>,
-    pub gdop: f64,
     pub accuracy: f64,
-    #[serde(rename = "capture_time_gps")]
-    pub capture_time_gps: f64,
-    #[serde(rename = "capture_time_utc")]
-    pub capture_time_utc: f64,
 }
 
 #[derive(Serialize, Clone)]

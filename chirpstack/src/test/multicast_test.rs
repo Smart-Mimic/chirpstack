@@ -1,3 +1,5 @@
+use chrono::{Duration, Utc};
+
 use super::assert;
 use crate::storage::{
     application, device, device_gateway, device_profile, fields, gateway, multicast, tenant,
@@ -37,6 +39,8 @@ async fn test_multicast() {
                 .cloned()
                 .collect(),
         ),
+        stats_interval_secs: 30,
+        last_seen_at: Some(Utc::now()),
         ..Default::default()
     })
     .await
@@ -54,7 +58,7 @@ async fn test_multicast() {
     // device-profile
     let dp = device_profile::create(device_profile::DeviceProfile {
         name: "test-dp".into(),
-        tenant_id: t.id.clone(),
+        tenant_id: t.id,
         ..Default::default()
     })
     .await
@@ -82,12 +86,14 @@ async fn test_multicast() {
         group_type: "C".into(),
         dr: 3,
         frequency: 868300000,
-        class_b_ping_slot_period: 32,
+        class_b_ping_slot_nb_k: 0,
         ..Default::default()
     })
     .await
     .unwrap();
-    multicast::add_device(&mg.id, &d.dev_eui).await.unwrap();
+    multicast::add_device(&mg.id.into(), &d.dev_eui)
+        .await
+        .unwrap();
 
     // device <> gateway
     device_gateway::save_rx_info(&internal::DeviceGatewayRxInfo {
@@ -201,20 +207,24 @@ async fn test_multicast() {
         MulticastTest {
             name: "item discarded because of payload size".into(),
             multicast_group: mg.clone(),
-            multicast_group_queue_items: vec![
-                multicast::MulticastGroupQueueItem {
-                    multicast_group_id: mg.id,
-                    f_port: 5,
-                    data: vec![2; 300],
-                    ..Default::default()
-                },
-                multicast::MulticastGroupQueueItem {
-                    multicast_group_id: mg.id,
-                    f_port: 6,
-                    data: vec![1, 2, 3],
-                    ..Default::default()
-                },
-            ],
+            multicast_group_queue_items: vec![multicast::MulticastGroupQueueItem {
+                multicast_group_id: mg.id,
+                f_port: 5,
+                data: vec![2; 300],
+                ..Default::default()
+            }],
+            assert: vec![assert::no_downlink_frame()],
+        },
+        MulticastTest {
+            name: "item discarded because it has expired".into(),
+            multicast_group: mg.clone(),
+            multicast_group_queue_items: vec![multicast::MulticastGroupQueueItem {
+                multicast_group_id: mg.id,
+                f_port: 5,
+                data: vec![1, 2, 3],
+                expires_at: Some(Utc::now() - Duration::seconds(10)),
+                ..Default::default()
+            }],
             assert: vec![assert::no_downlink_frame()],
         },
     ];
@@ -228,7 +238,7 @@ async fn run_scheduler_test(t: &MulticastTest) {
     println!("> {}", t.name);
 
     integration::set_mock().await;
-    gateway_backend::set_backend(&"eu868", Box::new(gateway_backend::mock::Backend {})).await;
+    gateway_backend::set_backend("eu868", Box::new(gateway_backend::mock::Backend {})).await;
 
     // overwrite multicast-group to deal with frame-counter increments
     multicast::update(t.multicast_group.clone()).await.unwrap();

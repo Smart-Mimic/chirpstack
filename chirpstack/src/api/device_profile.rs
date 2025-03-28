@@ -45,7 +45,7 @@ impl DeviceProfileService for DeviceProfile {
             .await?;
 
         let mut dp = device_profile::DeviceProfile {
-            tenant_id,
+            tenant_id: tenant_id.into(),
             name: req_dp.name.clone(),
             description: req_dp.description.clone(),
             region: req_dp.region().from_proto(),
@@ -113,6 +113,7 @@ impl DeviceProfileService for DeviceProfile {
                 as i16,
             relay_overall_limit_bucket_size: req_dp.relay_overall_limit_bucket_size as i16,
             allow_roaming: req_dp.allow_roaming,
+            rx1_delay: req_dp.rx1_delay as i16,
             ..Default::default()
         };
 
@@ -214,6 +215,7 @@ impl DeviceProfileService for DeviceProfile {
                     as u32,
                 relay_overall_limit_bucket_size: dp.relay_overall_limit_bucket_size as u32,
                 allow_roaming: dp.allow_roaming,
+                rx1_delay: dp.rx1_delay as u32,
             }),
             created_at: Some(helpers::datetime_to_prost_timestamp(&dp.created_at)),
             updated_at: Some(helpers::datetime_to_prost_timestamp(&dp.updated_at)),
@@ -245,7 +247,7 @@ impl DeviceProfileService for DeviceProfile {
 
         // update
         let _ = device_profile::update(device_profile::DeviceProfile {
-            id: dp_id,
+            id: dp_id.into(),
             name: req_dp.name.clone(),
             description: req_dp.description.clone(),
             region: req_dp.region().from_proto(),
@@ -313,6 +315,7 @@ impl DeviceProfileService for DeviceProfile {
                 as i16,
             relay_overall_limit_bucket_size: req_dp.relay_overall_limit_bucket_size as i16,
             allow_roaming: req_dp.allow_roaming,
+            rx1_delay: req_dp.rx1_delay as i16,
             ..Default::default()
         })
         .await
@@ -597,7 +600,7 @@ pub mod test {
 
     fn get_request<T>(user_id: &Uuid, req: T) -> Request<T> {
         let mut req = Request::new(req);
-        req.extensions_mut().insert(AuthID::User(user_id.clone()));
+        req.extensions_mut().insert(AuthID::User(*user_id));
         req
     }
 }
