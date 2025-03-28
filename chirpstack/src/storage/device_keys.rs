@@ -131,7 +131,7 @@ pub async fn validate_incr_join_and_store_dev_nonce(
                 return Err(Error::InvalidDevNonce);
             }
 
-                dk.dev_nonces.push(Some(dev_nonce));
+                dk.dev_nonces.insert(join_eui, dev_nonce);
                 // dk.join_nonce += 1;
                 let random_join_nonce = OsRng.gen_range(0..=(1 << 24) - 1);
                 dk.join_nonce = random_join_nonce;
