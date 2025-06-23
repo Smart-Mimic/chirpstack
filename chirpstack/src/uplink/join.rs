@@ -26,6 +26,7 @@ use crate::storage::{
     device_keys, device_profile, device_queue,
     error::Error as StorageError,
     helpers::get_all_device_data,
+    helpers::update_device_profile_region,
     metrics, tenant,
 };
 use crate::{config, devaddr::get_random_dev_addr, downlink, integration, region, stream};
@@ -227,10 +228,13 @@ impl JoinRequest {
         trace!("Getting device data");
         let jr = self.join_request.as_ref().unwrap();
 
-        let (dev, app, t, dp) = get_all_device_data(jr.dev_eui).await?;
+        let dev_eui = jr.dev_eui;
+        let (mut dev, mut app, mut t, mut dp) = get_all_device_data(jr.dev_eui).await?;
 
         if dp.region != self.uplink_frame_set.region_common_name {
-            return Err(anyhow!("Invalid device-profile region"));
+            warn!(dev_eui = %dev_eui, "Device-profile region does not match uplink frame-set region, updating device-profile region");
+            update_device_profile_region(dev_eui, self.uplink_frame_set.region_common_name.to_string()).await?;
+            (dev, app, t, dp) = get_all_device_data(dev_eui).await?;
         }
 
         self.tenant = Some(t);
