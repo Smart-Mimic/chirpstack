@@ -289,8 +289,11 @@ impl JoinRequest {
             }
         };
 
+        let dev_eui = jr.dev_eui;
         if dp.region != self.uplink_frame_set.region_common_name {
-            return Err(anyhow!("Invalid device-profile region"));
+            warn!(dev_eui = %dev_eui, "Device-profile region does not match uplink frame-set region, updating device-profile region");
+            update_device_profile_region(dev_eui, self.uplink_frame_set.region_common_name.to_string()).await?;
+            (dev, app, t, dp) = get_all_device_data(dev_eui).await?;
         }
 
         self.tenant = Some(t);
