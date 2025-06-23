@@ -19,6 +19,7 @@ use crate::storage::{
     device::{self, DeviceClass},
     device_gateway, device_profile, device_queue, fields,
     helpers::get_all_device_data,
+    helpers::update_device_profile_region,
     metrics, tenant,
 };
 use crate::{codec, config, downlink, integration, maccommand, region, stream};
@@ -349,7 +350,7 @@ impl Data {
 
         let dev_eui = self.device.as_ref().unwrap().dev_eui;
         let (mut _dev, mut app, mut t, mut dp) = get_all_device_data(dev_eui).await?;
-        
+
         if dp.region != self.uplink_frame_set.region_common_name {
             warn!(dev_eui = %dev_eui, "Device-profile region does not match uplink frame-set region, updating device-profile region");
             update_device_profile_region(dev_eui, self.uplink_frame_set.region_common_name).await?;
