@@ -348,10 +348,12 @@ impl Data {
         trace!("Getting device data");
 
         let dev_eui = self.device.as_ref().unwrap().dev_eui;
-        let (_, app, t, dp) = get_all_device_data(dev_eui).await?;
-
+        let (mut _dev, mut app, mut t, mut dp) = get_all_device_data(dev_eui).await?;
+        
         if dp.region != self.uplink_frame_set.region_common_name {
-            return Err(anyhow!("Invalid device-profile region"));
+            warn!(dev_eui = %dev_eui, "Device-profile region does not match uplink frame-set region, updating device-profile region");
+            update_device_profile_region(dev_eui, self.uplink_frame_set.region_common_name).await?;
+            (_dev, app, t, dp) = get_all_device_data(dev_eui).await?;
         }
 
         self.tenant = Some(t);

@@ -13,7 +13,7 @@ dev-dependencies:
 
 # Set the versions
 version:
-	test -n "$(VERSION)"
+	# test -n "$(VERSION)"
 	sed -i '' 's/^version.*/version = "$(VERSION)"/g' ./chirpstack/Cargo.toml
 	sed -i '' 's/^version.*/version = "$(VERSION)"/g' ./backend/Cargo.toml
 	sed -i '' 's/^version.*/version = "$(VERSION)"/g' ./lrwn/Cargo.toml

@@ -21,3 +21,14 @@ pub async fn get_all_device_data(
         .map_err(|e| Error::from_diesel(e, dev_eui.to_string()))?;
     Ok(res)
 }
+
+
+pub async fn update_device_profile_region(dev_eui: EUI64, region: String) -> Result<(), Error> {
+    let res = device_profile::table
+        .filter(device_profile::dsl::dev_eui.eq(&dev_eui))
+        .update(device_profile::dsl::region.eq(region))
+        .execute(&mut get_async_db_conn().await?)
+        .await
+        .map_err(|e| Error::from_diesel(e, dev_eui.to_string()))?;
+    Ok(res)
+}
