@@ -121,7 +121,7 @@ impl JoinRequest {
     async fn get_device_data(&mut self) -> Result<()> {
         trace!("Getting device data");
         let jr = self.join_request.as_ref().unwrap();
-        let (dev, app, t, dp) = get_all_device_data(jr.dev_eui).await?;
+        let (mut dev, mut app, mut t, mut dp) = get_all_device_data(jr.dev_eui).await?;
 
         let dev_eui = jr.dev_eui;
         if dp.region != self.uplink_frame_set.region_common_name {

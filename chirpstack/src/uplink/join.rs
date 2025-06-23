@@ -271,7 +271,7 @@ impl JoinRequest {
     async fn get_device_data_or_try_pr_roaming(&mut self) -> Result<()> {
         trace!("Getting device");
         let jr = self.join_request.as_ref().unwrap();
-        let (dev, app, t, dp) = match get_all_device_data(jr.dev_eui).await {
+        let (mut dev, mut app, mut t, mut dp) = match get_all_device_data(jr.dev_eui).await {
             Ok(v) => v,
             Err(e) => {
                 if let StorageError::NotFound(_) = e {
