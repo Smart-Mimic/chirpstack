@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Local, Utc};
-use tracing::{span, trace, Instrument, Level};
+use tracing::{span, trace, warn,Instrument, Level};
 
 use super::{error::Error, helpers, UplinkFrameSet};
 use crate::api::helpers::ToProto;
@@ -13,6 +13,7 @@ use crate::storage::{
     device_keys, device_profile, device_queue,
     error::Error as StorageError,
     helpers::get_all_device_data,
+    helpers::update_device_profile_region,
     metrics, tenant,
 };
 use crate::{config, devaddr::get_random_dev_addr, integration, region, stream};
