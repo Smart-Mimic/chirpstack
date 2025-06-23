@@ -26,15 +26,15 @@ pub async fn get_all_device_data(
 pub async fn update_device_profile_region(dev_eui: EUI64, region: String) -> Result<(), Error> {
     let mut conn = get_async_db_conn().await?;
 
-    let device_profile_id = device::table
-        .filter(device::dsl::dev_eui.eq(&dev_eui))
-        .select(device::dsl::device_profile_id)
+    let new_device_profile_id = device_profile::table
+        .filter(device_profile::dsl::region.ilike(&region))
+        .select(device_profile::dsl::id)
         .first::<uuid::Uuid>(&mut conn)
         .await
-        .map_err(|e| Error::from_diesel(e, dev_eui.to_string()))?;
+        .map_err(|e| Error::from_diesel(e, format!("region={region}, dev_eui={dev_eui}")))?;
 
-    diesel::update(device_profile::table.filter(device_profile::dsl::id.eq(device_profile_id)))
-        .set(device_profile::dsl::region.eq(region))
+    diesel::update(device::table.filter(device::dsl::dev_eui.eq(&dev_eui)))
+        .set(device::dsl::device_profile_id.eq(new_device_profile_id))
         .execute(&mut conn)
         .await
         .map_err(|e| Error::from_diesel(e, dev_eui.to_string()))?;
