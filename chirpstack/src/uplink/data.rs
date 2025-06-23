@@ -353,7 +353,7 @@ impl Data {
 
         if dp.region != self.uplink_frame_set.region_common_name {
             warn!(dev_eui = %dev_eui, "Device-profile region does not match uplink frame-set region, updating device-profile region");
-            update_device_profile_region(dev_eui, self.uplink_frame_set.region_common_name).await?;
+            update_device_profile_region(dev_eui, self.uplink_frame_set.region_common_name.to_string()).await?;
             (_dev, app, t, dp) = get_all_device_data(dev_eui).await?;
         }
 
