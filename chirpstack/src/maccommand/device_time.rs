@@ -13,14 +13,51 @@ pub fn handle(
     dev: &device::Device,
     block: &lrwn::MACCommandSet,
 ) -> Result<Option<lrwn::MACCommandSet>> {
-    let _ = (**block)
-        .first()
-        .ok_or_else(|| anyhow!("Expected DeviceTimeReq"))?;
+    let (f_port, payload_bytes) = match &uplink_frame_set.phy_payload.payload {
+        lrwn::Payload::MACPayload(pl) => {
+            let bytes = match &pl.frm_payload {
+                Some(lrwn::FRMPayload::Raw(b)) => Some(b.as_slice()),
+                _ => None,
+            };
+            (pl.f_port, bytes)
+        }
+        _ => (None, None),
+    };
+
+    let is_port_198_with_zero_slice = if f_port == Some(198) {
+        if let Some(bytes) = payload_bytes {
+            let len = bytes.len();
+            if len >= 10 {
+                let slice = &bytes[len - 10..len - 4];
+                slice.iter().all(|&b| b == 0)
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    if !is_port_198_with_zero_slice {
+        let _ = (**block)
+            .first()
+            .ok_or_else(|| anyhow!("Expected DeviceTimeReq"))?;
+    }
+
+    if f_port == Some(198) && !is_port_198_with_zero_slice {
+        return Ok(None);
+    }
 
     let rx_time: DateTime<Utc> = helpers::get_rx_timestamp(&uplink_frame_set.rx_info_set).into();
     let gps_time = rx_time.to_gps_time();
 
-    info!(dev_eui = %dev.dev_eui, rx_time = %rx_time, gps_time = %gps_time.num_seconds(), "DeviceTimeReq received");
+    if is_port_198_with_zero_slice {
+        info!(dev_eui = %dev.dev_eui, rx_time = %rx_time, gps_time = %gps_time.num_seconds(), "DeviceTimeAns triggered by port 198 with zero slice");
+    } else {
+        info!(dev_eui = %dev.dev_eui, rx_time = %rx_time, gps_time = %gps_time.num_seconds(), "DeviceTimeReq received");
+    }
 
     Ok(Some(lrwn::MACCommandSet::new(vec![
         lrwn::MACCommand::DeviceTimeAns(lrwn::DeviceTimeAnsPayload {
