@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::gpstime::ToGpsTime;
 use crate::storage::device;
@@ -16,6 +16,38 @@ pub fn handle(
     let _ = (**block)
         .first()
         .ok_or_else(|| anyhow!("Expected DeviceTimeReq"))?;
+
+    if let lrwn::Payload::MACPayload(ref mac_payload) = uplink_frame_set.phy_payload.payload {
+        if let Some(197) = mac_payload.f_port {
+            debug!(dev_eui = %dev.dev_eui, "Uplink received on port 197");
+            
+            if let Some(ref frm_payload) = mac_payload.frm_payload {
+                let payload_hex = hex::encode(frm_payload);
+                debug!(dev_eui = %dev.dev_eui, payload = %payload_hex, "Port 197 payload");
+                
+                if payload_hex.contains("00000000") {
+                    info!(dev_eui = %dev.dev_eui, "Payload contains 00000000, sending DeviceTimeAns");
+                    
+                    let rx_time: DateTime<Utc> = helpers::get_rx_timestamp(&uplink_frame_set.rx_info_set).into();
+                    let gps_time = rx_time.to_gps_time();
+
+                    info!(dev_eui = %dev.dev_eui, rx_time = %rx_time, gps_time = %gps_time.num_seconds(), "Sending DeviceTimeAns for port 197");
+
+                    return Ok(Some(lrwn::MACCommandSet::new(vec![
+                        lrwn::MACCommand::DeviceTimeAns(lrwn::DeviceTimeAnsPayload {
+                            time_since_gps_epoch: match gps_time.to_std() {
+                                Ok(v) => v,
+                                Err(e) => {
+                                    warn!(error = %e, "To GPS time error");
+                                    Duration::from_secs(0)
+                                }
+                            },
+                        }),
+                    ])));
+                }
+            }
+        }
+    }
 
     let rx_time: DateTime<Utc> = helpers::get_rx_timestamp(&uplink_frame_set.rx_info_set).into();
     let gps_time = rx_time.to_gps_time();
