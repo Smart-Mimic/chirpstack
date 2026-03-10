@@ -832,9 +832,12 @@ impl Data {
             }
             
             if pl.f_port == Some(197) {
+                info!("devicetime_debug: 197 wifi payload for dev_eui: {}", self.device.as_ref().unwrap().dev_eui);
                 if let Some(lrwn::FRMPayload::Raw(ref payload_bytes)) = pl.frm_payload {
                     let payload_hex = hex::encode(payload_bytes);
+                    info!("devicetime_debug: 197 wifi payload hex: {}", payload_hex);
                     if payload_hex.contains("00000000") {
+                        info!("devicetime_debug: 197 wifi payload contains 00000000");
                         let empty_block = lrwn::MACCommandSet::new(vec![]);
                         if let Ok(Some(mac_response)) = maccommand::device_time::handle(
                             &self.uplink_frame_set,
