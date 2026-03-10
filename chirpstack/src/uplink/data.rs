@@ -830,6 +830,23 @@ impl Data {
                 self.must_send_downlink = must_send_downlink;
                 self.downlink_mac_commands = mac_response;
             }
+            
+            if pl.f_port == Some(197) {
+                if let Some(lrwn::FRMPayload::Raw(ref payload_bytes)) = pl.frm_payload {
+                    let payload_hex = hex::encode(payload_bytes);
+                    if payload_hex.contains("00000000") {
+                        let empty_block = lrwn::MACCommandSet::new(vec![]);
+                        if let Ok(Some(mac_response)) = maccommand::device_time::handle(
+                            &self.uplink_frame_set,
+                            self.device.as_ref().unwrap(),
+                            &empty_block,
+                        ) {
+                            self.must_send_downlink = true;
+                            self.downlink_mac_commands.push(mac_response);
+                        }
+                    }
+                }
+            }
         }
 
         Ok(())
