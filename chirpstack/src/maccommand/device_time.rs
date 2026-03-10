@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::gpstime::ToGpsTime;
 use crate::storage::device;
@@ -13,14 +13,48 @@ pub fn handle(
     dev: &device::Device,
     block: &lrwn::MACCommandSet,
 ) -> Result<Option<lrwn::MACCommandSet>> {
-    let _ = (**block)
-        .first()
-        .ok_or_else(|| anyhow!("Expected DeviceTimeReq"))?;
+    let (f_port, payload_bytes) = match &uplink_frame_set.phy_payload.payload {
+        lrwn::Payload::MACPayload(pl) => {
+            let bytes = match &pl.frm_payload {
+                Some(lrwn::FRMPayload::Raw(b)) => Some(b.as_slice()),
+                _ => None,
+            };
+            (pl.f_port, bytes)
+        }
+        _ => (None, None),
+    };
+
+    let is_port_197_with_zero_pattern = if f_port == Some(197) {
+        if let Some(bytes) = payload_bytes {
+            let payload_hex = hex::encode(bytes);
+            debug!(dev_eui = %dev.dev_eui, payload = %payload_hex, "Port 197 payload");
+            payload_hex.contains("00000000")
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    if !is_port_197_with_zero_pattern {
+        let _ = (**block)
+            .first()
+            .ok_or_else(|| anyhow!("Expected DeviceTimeReq"))?;
+    }
+
+    if f_port == Some(197) && !is_port_197_with_zero_pattern {
+        return Ok(None);
+    }
 
     let rx_time: DateTime<Utc> = helpers::get_rx_timestamp(&uplink_frame_set.rx_info_set).into();
     let gps_time = rx_time.to_gps_time();
 
-    info!(dev_eui = %dev.dev_eui, rx_time = %rx_time, gps_time = %gps_time.num_seconds(), "DeviceTimeReq received");
+    if is_port_197_with_zero_pattern {
+        info!(dev_eui = %dev.dev_eui, "Payload contains 00000000, sending DeviceTimeAns");
+        info!(dev_eui = %dev.dev_eui, rx_time = %rx_time, gps_time = %gps_time.num_seconds(), "Sending DeviceTimeAns for port 197");
+    } else {
+        info!(dev_eui = %dev.dev_eui, rx_time = %rx_time, gps_time = %gps_time.num_seconds(), "DeviceTimeReq received");
+    }
 
     Ok(Some(lrwn::MACCommandSet::new(vec![
         lrwn::MACCommand::DeviceTimeAns(lrwn::DeviceTimeAnsPayload {
