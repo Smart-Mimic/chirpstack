@@ -3,6 +3,7 @@ use std::str::FromStr;
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Local, Utc};
+use diesel_async::RunQueryDsl;
 use tracing::{debug, error, info, span, trace, warn, Instrument, Level};
 
 use super::error::Error;
@@ -773,7 +774,11 @@ impl Data {
         let d = self.device.as_mut().unwrap();
 
         if let lrwn::Payload::MACPayload(pl) = &self.phy_payload.payload {
-            if pl.fhdr.f_ctrl.adr_ack_req {
+            let dev_eui_str = d.dev_eui.to_string().to_uppercase();
+            let skip_dev_eui = dev_eui_str == "0016C001F00076A8" 
+                || dev_eui_str == "0016C001F0006E13";
+            
+            if pl.fhdr.f_ctrl.adr_ack_req && !skip_dev_eui {
                 let region_conf = region::get(&self.uplink_frame_set.region_config_id)?;
                 let ds = d.get_device_session_mut()?;
 
