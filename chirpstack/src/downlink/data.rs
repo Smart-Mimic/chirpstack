@@ -1119,6 +1119,12 @@ impl Data {
 
     async fn _request_custom_channel_reconfiguration(&mut self) -> Result<()> {
         trace!("Requesting custom channel re-configuration");
+        
+        let dev_eui_str = self.device.dev_eui.to_string().to_uppercase();
+        if dev_eui_str == "0016C001F00076A8" || dev_eui_str == "0016C001F0006E13" {
+            return Ok(());
+        }
+        
         let mut wanted_channels: HashMap<usize, lrwn::region::Channel> = HashMap::new();
         let ds = self.device.get_device_session_mut()?;
 

@@ -1,6 +1,6 @@
 [package]
 name = "backend"
-version = "4.8.78"
+version = "4.8.79"
 authors = ["Orne Brocaar <info@brocaar.com>"]
 edition = "2018"
 publish = false
